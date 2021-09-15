@@ -9,29 +9,9 @@ import std.conv;
 import std.traits;
 import std.stdio;
 
-enum Item : byte {
-    NONE = -1
-}
-
-enum Scene : uint {
-    CHILLY_WATERS_BOARD    =  72,
-    DEEP_BLOOBER_SEA_BOARD =  73,
-    SPINY_DESERT_BOARD     =  74,
-    WOODY_WOODS_BOARD      =  75,
-    CREEPY_CAVERN_BOARD    =  76,
-    WALUIGIS_ISLAND_BOARD  =  77,
-    FINISH_BOARD           =  79,
-    BOWSER                 =  80,
-    START_BOARD            =  83,
-    CHANCE_TIME            = 106,
-    MINI_GAME_RESULTS      = 113,
-    GAMBLE_GAME_RESULTS    = 114,
-    BATTLE_GAME_RESULTS    = 116,
-    BATTLE_ROYAL_SETUP     = 120
-}
-
 class PlayerConfig {
     int team;
+    //bool reverse;
 
     this() {}
     this(int team) { this.team = team; }
@@ -39,7 +19,8 @@ class PlayerConfig {
 
 class MarioParty3Config : MarioPartyConfig {
     bool replaceChanceSpaces = true;
-    bool blockedMiniGames = true;
+    bool moveInAnyDirection = true;
+    MiniGame[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(0),
         new PlayerConfig(0),
@@ -61,6 +42,7 @@ union Player {
     mixin Field!(0x04, ubyte, "flags");
     mixin Field!(0x0A, ushort, "coins");
     mixin Field!(0x0E, ubyte, "stars");
+    mixin Field!(0x17, ubyte, "directionFlags");
     mixin Field!(0x18, Arr!(Item, 3), "items");
     mixin Field!(0x1C, Color, "color");
     mixin Field!(0x28, ushort, "gameCoins");
@@ -82,12 +64,10 @@ union Data {
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
-    mixin Field!(0x80102C08, Arr!(ubyte, 5), "miniGameSelection");
+    mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
 }
 
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
-    MiniGame[uint] miniGames;
-    
     this(string name, string hash) {
         super(name, hash);
     }
@@ -112,7 +92,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     override bool isScoreScene(Scene scene) const {
         switch (scene) {
             case Scene.FINISH_BOARD:
-            case Scene.BOWSER:
+            case Scene.BOWSER_EVENT:
+            case Scene.LAST_FIVE_TURNS:
             case Scene.START_BOARD:
             case Scene.CHANCE_TIME:
             case Scene.MINI_GAME_RESULTS:
@@ -130,7 +111,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         if (config.teams) {
             duelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
-                writeln("\tDUEL!");
                 teammates(currentPlayer).each!((t) {
                     t.coins = 0;
                 });
@@ -148,116 +128,279 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
         if (config.replaceChanceSpaces) {
             0x800FC594.onExec({ 0x800FC5A4.val!Instruction = 0x10000085; });
-            0x800EAEF4.onExec({ if (isBoardScene() && gpr.v0 == Space.Type.CHANCE) gpr.v0 = Space.Type.GAME_GUY; });
+            0x800EAEF4.onExec({
+                if (isBoardScene() && gpr.v0 == Space.Type.CHANCE) {
+                    gpr.v0 = Space.Type.GAME_GUY;
+                }
+            });
         }
 
-        if (config.blockedMiniGames) {
-            MiniGame[][MiniGame.Type] miniGameList;
-            MiniGame[uint][MiniGame.Type] miniGameScreen;
+        /*
+        if (config.moveInAnyDirection) {
+            0x800FD190.onExec({
+                writeln(1);
+                if (!isBoardScene()) return;
+                writeln(2);
+                if (currentPlayer.config.reverse) {
+                    writeln(3);
+                    currentPlayer.directionFlags |= 0x80;
+                }
+            });
+            0x800FD194.onExec({
+                if (!isBoardScene()) return;
+                currentPlayer.directionFlags |= 0x80;
+            });
+            players.each!((p) {
+                p.directionFlags.onWrite((ref ubyte flags) {
+                    if (!isBoardScene()) return;
+                    if (flags & 0x80) {
+                        p.config.reverse = (flags & 0x01);
+                        writeln(currentPlayerIndex, " ", p.config.reverse);
+                    }
+                });
+            });
+        }
+        */
+
+        if (config.blockedMiniGames.length > 0) {
+            MiniGame[][MiniGameType] miniGameList;
+            MiniGame[uint][MiniGameType] miniGameScreen;
             0x800DFE90.onExec({
                 if (!isBoardScene()) return;
                 0x800DFED4.val!Instruction = NOP;
                 0x800DFF40.val!Instruction = NOP;
                 0x800DFF64.val!Instruction = NOP;
                 0x800DFF78.val!Instruction = NOP;
-                auto t = miniGames[gpr.v0].type;
-                miniGameList.require(t, miniGames.values
-                                                 .filter!(g => g.type == t)
-                                                 .filter!(g => g.enabled)
-                                                 .array.randomShuffle(random));
+                auto t = (cast(MiniGame)gpr.v0).type;
+                miniGameList.require(t, [EnumMembers!MiniGame].filter!(g => g.type == t)
+                                                              .filter!(g => !config.blockedMiniGames.canFind(g))
+                                                              .array.randomShuffle(random));
                 if (gpr.s0 !in miniGameScreen.require(t)) {
                     miniGameScreen[t][gpr.s0] = miniGameList[t].front;
                     miniGameList[t].popFront();
                 }
-                gpr.v0 = miniGameScreen[t][gpr.s0].id;
+                gpr.v0 = miniGameScreen[t][gpr.s0];
             });
             0x800DF468.onExec({
                 if (!isBoardScene()) return;
-                auto t = miniGames[miniGameSelection[gpr.v1]].type;
+                auto t = miniGameSelection[gpr.v1].type;
                 miniGameList[t] ~= miniGameScreen[t][gpr.v1];
                 miniGameList[t].swapAt(0, uniform(0, miniGameList[t].length / 3, random));
                 miniGameScreen[t][gpr.v1] = miniGameList[t].front;
                 miniGameList[t].popFront();
             });
         }
-
-        [
-            new MiniGame(0x01, MiniGame.Type.ONE_V_THREE, "Hand, Line and Sinker", false),
-            new MiniGame(0x02, MiniGame.Type.ONE_V_THREE, "Coconut Conk"),
-            new MiniGame(0x03, MiniGame.Type.ONE_V_THREE, "Spotlight Swim"),
-            new MiniGame(0x04, MiniGame.Type.ONE_V_THREE, "Boulder Ball"),
-            new MiniGame(0x05, MiniGame.Type.ONE_V_THREE, "Crazy Cogs"),
-            new MiniGame(0x06, MiniGame.Type.ONE_V_THREE, "Hide and Sneak"),
-            new MiniGame(0x07, MiniGame.Type.ONE_V_THREE, "Ridiculous Relay"),
-            new MiniGame(0x08, MiniGame.Type.ONE_V_THREE, "Thwomp Pull"),
-            new MiniGame(0x09, MiniGame.Type.ONE_V_THREE, "River Raiders"),
-            new MiniGame(0x0A, MiniGame.Type.ONE_V_THREE, "Tidal Toss"),
-            new MiniGame(0x0B, MiniGame.Type.TWO_V_TWO, "Eatsa Pizza"),
-            new MiniGame(0x0C, MiniGame.Type.TWO_V_TWO, "Baby Bowser Broadside", false),
-            new MiniGame(0x0D, MiniGame.Type.TWO_V_TWO, "Pump, Pump and Away"),
-            new MiniGame(0x0E, MiniGame.Type.TWO_V_TWO, "Hyper Hydrants"),
-            new MiniGame(0x0F, MiniGame.Type.TWO_V_TWO, "Picking Panic"),
-            new MiniGame(0x10, MiniGame.Type.TWO_V_TWO, "Cosmic Coaster"),
-            new MiniGame(0x11, MiniGame.Type.TWO_V_TWO, "Puddle Paddle"),
-            new MiniGame(0x12, MiniGame.Type.TWO_V_TWO, "Etch 'n' Catch"),
-            new MiniGame(0x13, MiniGame.Type.TWO_V_TWO, "Log Jam"),
-            new MiniGame(0x14, MiniGame.Type.TWO_V_TWO, "Slot Synch"),
-            new MiniGame(0x15, MiniGame.Type.FOUR_PLAYER, "Treadmill Grill"),
-            new MiniGame(0x16, MiniGame.Type.FOUR_PLAYER, "Toadstool Titan"),
-            new MiniGame(0x17, MiniGame.Type.FOUR_PLAYER, "Aces High"),
-            new MiniGame(0x18, MiniGame.Type.FOUR_PLAYER, "Bounce 'n' Trounce"),
-            new MiniGame(0x19, MiniGame.Type.FOUR_PLAYER, "Ice Rink Risk"),
-            new MiniGame(0x1A, MiniGame.Type.BATTLE, "Locked Out"),
-            new MiniGame(0x1B, MiniGame.Type.FOUR_PLAYER, "Chip Shot Challenge"),
-            new MiniGame(0x1C, MiniGame.Type.FOUR_PLAYER, "Parasol Plummet"),
-            new MiniGame(0x1D, MiniGame.Type.FOUR_PLAYER, "Messy Memory"),
-            new MiniGame(0x1E, MiniGame.Type.FOUR_PLAYER, "Picture Imperfect"),
-            new MiniGame(0x1F, MiniGame.Type.FOUR_PLAYER, "Mario's Puzzle Party"),
-            new MiniGame(0x20, MiniGame.Type.FOUR_PLAYER, "The Beat Goes On"),
-            new MiniGame(0x21, MiniGame.Type.FOUR_PLAYER, "M.P.I.Q."),
-            new MiniGame(0x22, MiniGame.Type.FOUR_PLAYER, "Curtain Call"),
-            new MiniGame(0x23, MiniGame.Type.FOUR_PLAYER, "Water Whirled"),
-            new MiniGame(0x24, MiniGame.Type.FOUR_PLAYER, "Frigid Bridges"),
-            new MiniGame(0x25, MiniGame.Type.FOUR_PLAYER, "Awful Tower"),
-            new MiniGame(0x26, MiniGame.Type.FOUR_PLAYER, "Cheep Cheep Chase", false),
-            new MiniGame(0x27, MiniGame.Type.FOUR_PLAYER, "Pipe Cleaners"),
-            new MiniGame(0x28, MiniGame.Type.FOUR_PLAYER, "Snowball Summit"),
-            new MiniGame(0x29, MiniGame.Type.BATTLE, "All Fired Up"),
-            new MiniGame(0x2A, MiniGame.Type.BATTLE, "Stacked Deck"),
-            new MiniGame(0x2B, MiniGame.Type.BATTLE, "Three Door Monty", false),
-            new MiniGame(0x2C, MiniGame.Type.FOUR_PLAYER, "Rockin' Raceway"),
-            new MiniGame(0x2D, MiniGame.Type.BATTLE, "Merry-Go-Chomp"),
-            new MiniGame(0x2E, MiniGame.Type.BATTLE, "Slap Down"),
-            new MiniGame(0x2F, MiniGame.Type.BATTLE, "Storm Chasers"),
-            new MiniGame(0x30, MiniGame.Type.BATTLE, "Eye Sore"),
-            new MiniGame(0x31, MiniGame.Type.DUEL, "Vine With Me"),
-            new MiniGame(0x32, MiniGame.Type.DUEL, "Popgun Pick-Off"),
-            new MiniGame(0x33, MiniGame.Type.DUEL, "End of the Line"),
-            new MiniGame(0x34, MiniGame.Type.DUEL, "Bowser Toss", false),
-            new MiniGame(0x35, MiniGame.Type.DUEL, "Baby Bowser Bonkers"),
-            new MiniGame(0x36, MiniGame.Type.DUEL, "Motor Rooter"),
-            new MiniGame(0x37, MiniGame.Type.DUEL, "Silly Screws"),
-            new MiniGame(0x38, MiniGame.Type.DUEL, "Crowd Cover"),
-            new MiniGame(0x39, MiniGame.Type.DUEL, "Tick Tock Hop"),
-            new MiniGame(0x3A, MiniGame.Type.DUEL, "Fowl Play"),
-            new MiniGame(0x3B, MiniGame.Type.ITEM, "Winner's Wheel"),
-            new MiniGame(0x3C, MiniGame.Type.ITEM, "Hey, Batter, Batter!"),
-            new MiniGame(0x3D, MiniGame.Type.ITEM, "Bobbling Bow-loons"),
-            new MiniGame(0x3E, MiniGame.Type.ITEM, "Dorrie Dip"),
-            new MiniGame(0x3F, MiniGame.Type.ITEM, "Swinging with Sharks"),
-            new MiniGame(0x40, MiniGame.Type.ITEM, "Swing 'n' Swipe"),
-            new MiniGame(0x41, MiniGame.Type.CHANCE, "Chance Time"),
-            new MiniGame(0x42, MiniGame.Type.SPECIAL, "Stardust Battle"),
-            new MiniGame(0x43, MiniGame.Type.GAMBLE, "Game Guy's Roulette", false),
-            new MiniGame(0x44, MiniGame.Type.GAMBLE, "Game Guy's Lucky 7"),
-            new MiniGame(0x45, MiniGame.Type.GAMBLE, "Game Guy's Magic Boxes"),
-            new MiniGame(0x46, MiniGame.Type.GAMBLE, "Game Guy's Sweet Surprise"),
-            new MiniGame(0x47, MiniGame.Type.SPECIAL, "Dizzy Dinghies"),
-            new MiniGame(0x48, MiniGame.Type.SPECIAL, "Mario's Puzzle Party Pro")
-        ].each!(m => miniGames[m.id] = m);
     }
 }
 
 shared static this() {
     pluginFactory = (name, hash) => new MarioParty3(name, hash);
+}
+
+enum Item : byte {
+    NONE = -1
+}
+
+enum Scene : uint {
+    BOOT                     =   0,
+    HAND_LINE_AND_SINKER     =   1,
+    COCONUT_CONK             =   2,
+    SPOTLIGHT_SWIM           =   3,
+    BOULDER_BALL             =   4,
+    CRAZY_COGS               =   5,
+    HIDE_AND_SNEAK           =   6,
+    RIDICULOUS_RELAY         =   7,
+    THWOMP_PULL              =   8,
+    RIVER_RAIDERS            =   9,
+    TIDAL_TOSS               =  10,
+    EATSA_PIZZA              =  11,
+    BABY_BOWSER_BROADSIDE    =  12,
+    PUMP_PUMP_AND_AWAY       =  13,
+    HYPER_HYDRANTS           =  14,
+    PICKING_PANIC            =  15,
+    COSMIC_COASTER           =  16,
+    PUDDLE_PADDLE            =  17,
+    ETCH_N_CATCH             =  18,
+    LOG_JAM                  =  19,
+    SLOT_SYNCH               =  20,
+    TREADMILL_GRILL          =  21,
+    TOADSTOOL_TITAN          =  22,
+    ACES_HIGH                =  23,
+    BOUNCE_N_TROUNCE         =  24,
+    ICE_RINK_RISK            =  25,
+    LOCKED_OUT               =  26,
+    CHIP_SHOT_CHALLENGE      =  27,
+    PARASOL_PLUMMET          =  28,
+    MESSY_MEMORY             =  29,
+    PICTURE_IMPERFECT        =  30,
+    MARIOS_PUZZLE_PARTY      =  31,
+    THE_BEAT_GOES_ON         =  32,
+    MPIQ                     =  33,
+    CURTAIN_CALL             =  34,
+    WATER_WHIRLED            =  35,
+    FRIGID_BRIDGES           =  36,
+    AWFUL_TOWER              =  37,
+    CHEEP_CHEEP_CHASE        =  38,
+    PIPE_CLEANERS            =  39,
+    SNOWBALL_SUMMIT          =  40,
+    ALL_FIRED_UP             =  41,
+    STACKED_DECK             =  42,
+    THREE_DOOR_MONTY         =  43,
+    ROCKIN_RACEWAY           =  44,
+    MERRY_GO_CHOMP           =  45,
+    SLAP_DOWN                =  46,
+    STORM_CHASERS            =  47,
+    EYE_SORE                 =  48,
+    VINE_WITH_ME             =  49,
+    POPGUN_PICK_OFF          =  50,
+    END_OF_THE_LINE          =  51,
+    BOWSER_TOSS              =  52,
+    BABY_BOWSER_BONKERS      =  53,
+    MOTOR_ROOTER             =  54,
+    SILLY_SCREWS             =  55,
+    CROWD_COVER              =  56,
+    TICK_TOCK_HOP            =  57,
+    FOWL_PLAY                =  58,
+    WINNERS_WHEEL            =  59,
+    HEY_BATTER_BATTER        =  60,
+    BOBBLING_BOW_LOONS       =  61,
+    DORRIE_DIP               =  62,
+    SWINGING_WITH_SHARKS     =  63,
+    SWING_N_SWIPE            =  64,
+    STARDUST_BATTLE          =  65,
+    GAME_GUYS_ROULETTE       =  66,
+    GAME_GUYS_LUCKY_7        =  67,
+    GAME_GUYS_MAGIC_BOXES    =  68,
+    GAME_GUYS_SWEET_SURPRISE =  69,
+    DIZZY_DINGHIES           =  70,
+    TRANSITION               =  71,
+    CHILLY_WATERS_BOARD      =  72,
+    DEEP_BLOOBER_SEA_BOARD   =  73,
+    SPINY_DESERT_BOARD       =  74,
+    WOODY_WOODS_BOARD        =  75,
+    CREEPY_CAVERN_BOARD      =  76,
+    WALUIGIS_ISLAND_BOARD    =  77,
+    FINISH_BOARD             =  79,
+    BOWSER_EVENT             =  80,
+    LAST_FIVE_TURNS          =  81,
+    GENIE                    =  82,
+    START_BOARD              =  83,
+    OPENING_CREDITS          =  88,
+    MINI_GAME_ROOM_RETRY     = 104,
+    MINI_GAME_ROOM           = 105,
+    CHANCE_TIME              = 106,
+    MINI_GAME_RULES          = 112,
+    MINI_GAME_RESULTS        = 113,
+    GAMBLE_GAME_RESULTS      = 114,
+    BATTLE_GAME_RESULTS      = 116,
+    CASTLE_GROUNDS           = 119,
+    GAME_SETUP               = 120,
+    FILE_SELECTION           = 121,
+    TITLE_SCREEN             = 122,
+    PEACHS_CASTLE            = 123
+}
+
+enum MiniGame : ubyte {
+    HAND_LINE_AND_SINKER     =   1,
+    COCONUT_CONK             =   2,
+    SPOTLIGHT_SWIM           =   3,
+    BOULDER_BALL             =   4,
+    CRAZY_COGS               =   5,
+    HIDE_AND_SNEAK           =   6,
+    RIDICULOUS_RELAY         =   7,
+    THWOMP_PULL              =   8,
+    RIVER_RAIDERS            =   9,
+    TIDAL_TOSS               =  10,
+    EATSA_PIZZA              =  11,
+    BABY_BOWSER_BROADSIDE    =  12,
+    PUMP_PUMP_AND_AWAY       =  13,
+    HYPER_HYDRANTS           =  14,
+    PICKING_PANIC            =  15,
+    COSMIC_COASTER           =  16,
+    PUDDLE_PADDLE            =  17,
+    ETCH_N_CATCH             =  18,
+    LOG_JAM                  =  19,
+    SLOT_SYNCH               =  20,
+    TREADMILL_GRILL          =  21,
+    TOADSTOOL_TITAN          =  22,
+    ACES_HIGH                =  23,
+    BOUNCE_N_TROUNCE         =  24,
+    ICE_RINK_RISK            =  25,
+    LOCKED_OUT               =  26,
+    CHIP_SHOT_CHALLENGE      =  27,
+    PARASOL_PLUMMET          =  28,
+    MESSY_MEMORY             =  29,
+    PICTURE_IMPERFECT        =  30,
+    MARIOS_PUZZLE_PARTY      =  31,
+    THE_BEAT_GOES_ON         =  32,
+    MPIQ                     =  33,
+    CURTAIN_CALL             =  34,
+    WATER_WHIRLED            =  35,
+    FRIGID_BRIDGES           =  36,
+    AWFUL_TOWER              =  37,
+    CHEEP_CHEEP_CHASE        =  38,
+    PIPE_CLEANERS            =  39,
+    SNOWBALL_SUMMIT          =  40,
+    ALL_FIRED_UP             =  41,
+    STACKED_DECK             =  42,
+    THREE_DOOR_MONTY         =  43,
+    ROCKIN_RACEWAY           =  44,
+    MERRY_GO_CHOMP           =  45,
+    SLAP_DOWN                =  46,
+    STORM_CHASERS            =  47,
+    EYE_SORE                 =  48,
+    VINE_WITH_ME             =  49,
+    POPGUN_PICK_OFF          =  50,
+    END_OF_THE_LINE          =  51,
+    BOWSER_TOSS              =  52,
+    BABY_BOWSER_BONKERS      =  53,
+    MOTOR_ROOTER             =  54,
+    SILLY_SCREWS             =  55,
+    CROWD_COVER              =  56,
+    TICK_TOCK_HOP            =  57,
+    FOWL_PLAY                =  58,
+    WINNERS_WHEEL            =  59,
+    HEY_BATTER_BATTER        =  60,
+    BOBBLING_BOW_LOONS       =  61,
+    DORRIE_DIP               =  62,
+    SWINGING_WITH_SHARKS     =  63,
+    SWING_N_SWIPE            =  64,
+    CHANCE_TIME              =  65,
+    STARDUST_BATTLE          =  66,
+    GAME_GUYS_ROULETTE       =  67,
+    GAME_GUYS_LUCKY_7        =  68,
+    GAME_GUYS_MAGIC_BOXES    =  69,
+    GAME_GUYS_SWEET_SURPRISE =  70,
+    DIZZY_DINGHIES           =  71,
+    MARIOS_PUZZLE_PARTY_PRO  =  72
+}
+
+enum MiniGameType {
+    ONE_V_THREE,
+    TWO_V_TWO,
+    FOUR_PLAYER,
+    BATTLE,
+    DUEL,
+    ITEM,
+    GAMBLE,
+    SPECIAL
+}
+
+MiniGameType type(MiniGame game) {
+    switch (game) {
+        case 26: return MiniGameType.BATTLE;
+        case 44: return MiniGameType.FOUR_PLAYER;
+        default:
+    }
+
+    switch (game) {
+        case  1: .. case 10: return MiniGameType.ONE_V_THREE;
+        case 11: .. case 20: return MiniGameType.TWO_V_TWO;
+        case 21: .. case 40: return MiniGameType.FOUR_PLAYER;
+        case 41: .. case 48: return MiniGameType.BATTLE;
+        case 49: .. case 58: return MiniGameType.DUEL;
+        case 59: .. case 64: return MiniGameType.ITEM;
+        case 67: .. case 70: return MiniGameType.GAMBLE;
+        default:             return MiniGameType.SPECIAL;
+    }
 }

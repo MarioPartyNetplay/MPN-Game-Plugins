@@ -9,7 +9,6 @@ import std.string;
 import std.json;
 import std.file;
 import std.conv;
-import std.bitmanip;
 import std.traits;
 import std.stdio;
 
@@ -17,6 +16,17 @@ alias uint Address;
 alias uint Instruction;
 
 enum Instruction NOP = 0;
+
+ulong flip(ulong value) pure nothrow @nogc @safe {
+    import core.bitop;
+    return ror(value, 32);
+}
+
+ulong hash(ulong z) @safe nothrow @nogc pure {
+    z ^= z >> 30; z *= 0xbf58476d1ce4e5b9;
+    z ^= z >> 27; z *= 0x94d049bb133111eb;
+    z ^= z >> 31; return z;
+}
 
 size_t swapAddrEndian(T)(size_t address) pure nothrow @nogc @safe {
     static if (T.sizeof == 1) {
@@ -41,15 +51,17 @@ ref T val(T)(Address address) {
 }
 
 struct Ptr(T) {
-    Address value;
+    Address address;
 
-    ref T opIndex(int i) { return *Ptr!T(value + i * T.sizeof); }
-    ref T opUnary(string op)() if (op == "*") { return *swapAddrEndian(cast(T*)&memory[value - 0x80000000]); }
-    ref Ptr!T opUnary(string op)() if (op == "++") { value += T.sizeof; return this; }
-    ref Ptr!T opUnary(string op)() if (op == "--") { value -= T.sizeof; return this; }
-    T opCast(T)() const if (is(T == bool)) { return 0x80000000 <= value && value < 0x80800000; }
+    this(Address a) { address = a; }
+    ref Ptr!T opAssign(Address a) { address = a; return this; }
+    ref T opIndex(int i) { return *Ptr!T(address + i * T.sizeof); }
+    ref T opUnary(string op)() if (op == "*") { return *swapAddrEndian(cast(T*)&memory[address - 0x80000000]); }
+    ref Ptr!T opUnary(string op)() if (op == "++") { address += T.sizeof; return this; }
+    ref Ptr!T opUnary(string op)() if (op == "--") { address -= T.sizeof; return this; }
+    T opCast(T)() const if (is(T == bool)) { return 0x80000000 <= address && address < 0x80800000; }
 
-    alias value this;
+    alias address this;
 }
 
 align (1) struct Arr(T, size_t S = 0) {
@@ -76,40 +88,40 @@ mixin template Field(Address A, T, string N) {
     }
 }
 
-JSONValue serialize(T)(T scl) if (isScalarType!T) { return JSONValue(scl); }
-JSONValue serialize(T)(const T str) if (isSomeString!T) { return JSONValue(str); }
-JSONValue serialize(T)(const T arr) if (isArray!T && !isSomeString!T) {
-    return JSONValue(arr.map!(e => serialize(e)).array);
+JSONValue toJSON(T)(const T scl) if (isScalarType!T) { return JSONValue(scl); }
+JSONValue toJSON(T)(const T str) if (isSomeString!T) { return JSONValue(str); }
+JSONValue toJSON(T)(const T arr) if (isArray!T && !isSomeString!T) {
+    return JSONValue(arr.map!(e => e.toJSON()).array);
 }
-JSONValue serialize(T)(const T asc) if (isAssociativeArray!T) {
+JSONValue toJSON(T)(const T asc) if (isAssociativeArray!T) {
     auto result = parseJSON("{}");
     foreach (ref k, ref v; asc) {
-        result[to!string(k)] = serialize(v);
+        result[k.to!string()] = v.toJSON();
     }
     return result;
 }
-JSONValue serialize(T)(const ref T agg) if (is(T == struct)) {
+JSONValue toJSON(T)(const ref T agg) if (is(T == struct)) {
     JSONValue result = JSONValue("{}");
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
-        result[k] = serialize(v);
+        result[k] = v.toJSON();
     }
     return result;
 }
-JSONValue serialize(T)(const T agg, JSONValue result = parseJSON("{}")) if (is(T == class)) {
+JSONValue toJSON(T)(const T agg, JSONValue result = parseJSON("{}")) if (is(T == class)) {
     if (agg is null) return JSONValue(null);
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
-        result[k] = serialize(v);
+        result[k] = v.toJSON();
     }
     static if (is(BaseClassesTuple!T[0])) {
-        return serialize!(BaseClassesTuple!T[0])(agg, result);
+        return agg.toJSON!(BaseClassesTuple!T[0])(result);
     } else {
         return result;
     }
 }
 
-T deserialize(T)(const JSONValue scl) if (isScalarType!T) {
+T fromJSON(T)(const JSONValue scl) if (isScalarType!T) {
     switch (scl.type) {
         case JSONType.integer:  return cast(T)scl.integer;
         case JSONType.uinteger: return cast(T)scl.uinteger;
@@ -119,47 +131,41 @@ T deserialize(T)(const JSONValue scl) if (isScalarType!T) {
         default:                assert(0, "Invalid JSONValue type");
     }
 }
-T deserialize(T)(const JSONValue str) if (isSomeString!T) { return str.str; }
-T deserialize(T)(const JSONValue arr) if (isArray!T && !isSomeString!T) {
-    return arr.array.map!(e => deserialize!(ElementType!T)(e)).array;
+T fromJSON(T)(const JSONValue str) if (isSomeString!T) { return str.str; }
+T fromJSON(T)(const JSONValue arr) if (isArray!T && !isSomeString!T) {
+    return arr.array.map!(e => e.fromJSON!(ElementType!T)()).array;
 }
-T deserialize(T)(const JSONValue obj) if (isAssociativeArray!T) {
+T fromJSON(T)(const JSONValue obj) if (isAssociativeArray!T) {
     T result;
     foreach (ref k, ref v; obj.object) {
-        result[k] = deserialize!(typeof(result[k]))(v);
+        result[k] = v.fromJSON!(typeof(result[k]))();
     }
     return result;
 }
-T deserialize(T)(const JSONValue obj) if (is(T == struct)) {
+T fromJSON(T)(const JSONValue obj) if (is(T == struct)) {
     T result;
     foreach (i, ref v; result.tupleof) {
         auto k = __traits(identifier, result.tupleof[i]);
         if (auto value = k in obj) {
-            v = deserialize!(typeof(v))(*value);
+            v = (*value).fromJSON!(typeof(v))();
         }
     }
     return result;
 }
-T deserialize(T)(const JSONValue obj, T result = null) if (is(T == class)) {
+T fromJSON(T)(const JSONValue obj, T result = null) if (is(T == class)) {
     if (obj.type == JSONType.null_) return null;
     if (!result) result = new T;
     foreach (i, ref v; result.tupleof) {
         auto k = __traits(identifier, result.tupleof[i]);
         if (auto value = k in obj) {
-            v = deserialize!(typeof(v))(*value);
+            v = (*value).fromJSON!(typeof(v))();
         }
     }
     static if (is(BaseClassesTuple!T[0])) {
-        return cast(T)deserialize!(BaseClassesTuple!T[0])(obj, result);
+        return cast(T)obj.fromJSON!(BaseClassesTuple!T[0])(result);
     } else {
         return result;
     }
-}
-
-ulong hash(ulong z) @safe nothrow @nogc pure {
-    z ^= z >> 30; z *= 0xbf58476d1ce4e5b9;
-    z ^= z >> 27; z *= 0x94d049bb133111eb;
-    z ^= z >> 31; return z;
 }
 
 struct Xoshiro256pp {
@@ -233,6 +239,7 @@ union Buttons {
         union {
             struct {
                 import std.bitmanip;
+
                 mixin(bitfields!(
                     bool, "dR", 1, bool, "dL", 1, bool, "dD", 1, bool, "dU", 1,
                     bool, "s",  1, bool, "z",  1, bool, "b",  1, bool, "a",  1,
@@ -264,6 +271,7 @@ interface Plugin {
 abstract class Game(ConfigType) : Plugin {
     string romName;
     string romHash;
+	string dllLocation;
     ConfigType config;
 
     this(string romName, string romHash) {
@@ -275,14 +283,14 @@ abstract class Game(ConfigType) : Plugin {
 
     void loadConfig() {
         try {
-            config = deserialize!ConfigType(readText(romName ~ ".json").parseJSON());
+            config = readText(dllPath ~ romName ~ ".json").parseJSON().fromJSON!ConfigType();
         } catch (FileException e) {
             config = new ConfigType;
         }
     }
 
     void saveConfig() {
-        std.file.write(romName ~ ".json", serialize(config).toPrettyString());
+        std.file.write(dllPath ~ romName ~ ".json", config.toJSON().toPrettyString());
     }
 
     void onStart() { }
@@ -339,6 +347,8 @@ void handleException(Exception e) {
 
 __gshared {
     Xoshiro256pp random;
+	HMODULE dll;
+	string dllPath;
     HWND window;
     Plugin plugin;
     extern (C) void function(Address) addAddress;
@@ -389,7 +399,7 @@ extern (C) {
             handlers!4.write.clear();
             handlers!8.write.clear();
             if (pluginFactory) {
-                plugin = pluginFactory(to!string(romName), to!string(romHash));
+                plugin = pluginFactory(romName.to!string(), romHash.to!string());
             } else {
                 plugin = null;
             }
@@ -481,10 +491,17 @@ extern (Windows)
 BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved) {
     switch (ulReason) {
         case DLL_PROCESS_ATTACH:
+			dll = hInstance;
+			
+			wchar[MAX_PATH] my_location_array;
+			GetModuleFileName(hInstance, my_location_array.ptr, MAX_PATH);
+			dllPath = my_location_array.ptr.fromStringz.text;
+			dllPath = dllPath[0 .. dllPath.lastIndexOf('\\') + 1];
+			
             dll_process_attach(hInstance, true);
             break;
 
-        case DLL_PROCESS_DETACH:
+        case DLL_PROCESS_DETACH:			
             dll_process_detach(hInstance, true);
             break;
 

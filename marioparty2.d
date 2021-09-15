@@ -29,54 +29,6 @@ class MarioParty2Config : MarioPartyConfig {
     ];
 }
 
-enum Board : ushort {
-    WESTERN = 0,
-    PIRATE  = 1,
-    HORROR  = 2,
-    SPACE   = 3,
-    MYSTERY = 4,
-    BOWSER  = 5
-}
-
-enum Item : byte {
-    NONE             = -1,
-    MUSHROOM         =  0,
-    SKELETON_KEY     =  1,
-    PLUNDER_CHEST    =  2,
-    BOWSER_BOMB      =  3,
-    DUELING_GLOVE    =  4,
-    WARP_BLOCK       =  5,
-    GOLDEN_MUSHROOM  =  6,
-    BOO_BELL         =  7,
-    BOWSER_SUIT      =  8,
-    MAGIC_LAMP       =  9
-}
-
-enum Scene : uint {
-    BOOT                =   0,
-    CHANCE_TIME         =  52,
-    TRANSITION          =  61,
-    WESTERN_LAND_BOARD  =  62,
-    PIRATE_LAND_BOARD   =  65,
-    HORROR_LAND_BOARD   =  67,
-    SPACE_LAND_BOARD    =  69,
-    MYSTERY_LAND_BOARD  =  71,
-    BOWSER_LAND_BOARD   =  73,
-    FINAL_RESULTS       =  81,
-    FINISH_BOARD        =  82,
-    BOWSER              =  83,
-    START_BOARD         =  85,
-    OPENING_CREDITS     =  87,
-    GAME_SETUP          =  88,
-    MAIN_MENU           =  91,
-    MINI_GAME_LAND      =  92,
-    MINI_GAME_RULES_2   =  95,
-    MINI_GAME_RULES     =  96,
-    INTRODUCTION        =  98,
-    BATTLE_GAME_RESULTS = 111,
-    MINI_GAME_RESULTS   = 112
-}
-
 union Chain {
     ubyte[8] _data;
     mixin Field!(4, Ptr!ushort, "spaces");
@@ -164,7 +116,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
         switch (scene) {
             case Scene.CHANCE_TIME:
             case Scene.FINISH_BOARD:
-            case Scene.BOWSER:
+            case Scene.BOWSER_EVENT:
             case Scene.START_BOARD:
             case Scene.BATTLE_GAME_RESULTS:
             case Scene.MINI_GAME_RESULTS:
@@ -217,39 +169,39 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
             players.each!((p) {
                 p.item.onRead((ref Item item) {
                     if (!isBoardScene()) return;
-                    auto space = getSpace(p);
                     if (p.config.items.empty) {
                         item = Item.NONE;
-                    } else if (itemsFull(p) || itemMenuOpen || p.config.items.back == Item.BOWSER_BOMB || *pc == 0x8005EEA8 /* Display Item Icon */) {
+                    } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
+                        item = Item.BOWSER_BOMB;
+                    } else if (itemsFull(p) || itemMenuOpen || *pc == 0x8005EEA8 /* Display Item Icon */) {
                         item = p.config.items.back;
-                    } else if (space) {
-                        if (space.type == Space.Type.INTERSECTION && p.config.items.canFind(Item.SKELETON_KEY)) {
-                            item = Item.SKELETON_KEY;
-                        } else {
-                            item = Item.NONE;
-                        }
                     } else {
                         item = Item.NONE;
+                    }
+                    if (auto space = getSpace(p)) {
+                        if (space.type == Space.Type.INTERSECTION && p.config.items.canFind(Item.SKELETON_KEY)) {
+                            item = Item.SKELETON_KEY;
+                        }
                     }
                 });
 
                 p.item.onWrite((ref Item item) {
                     if (!isBoardScene()) return;
                     if (item == Item.NONE) {
-                        if (!p.config.items.empty) {
-                            auto space = getSpace(p);
-                            if (space && space.type == Space.Type.INTERSECTION) {
+                        if (p.config.items.empty) return;
+                        if (auto space = getSpace(p)) {
+                            if (space.type == Space.Type.INTERSECTION) {
                                 auto i = p.config.items.countUntil(Item.SKELETON_KEY);
                                 if (i >= 0) p.config.items = p.config.items.remove(i);
                             } else {
                                 p.config.items.popBack();
                             }
+                        } else {
+                            p.config.items.popBack();
                         }
-                    } else if (item == Item.BOWSER_BOMB && p.config.items.canFind(Item.BOWSER_BOMB)) {
-
-                    } else if (itemsFull(p)) {
-
                     } else {
+                        if (itemsFull(p)) return;
+                        if (item == Item.BOWSER_BOMB && p.config.items.canFind(Item.BOWSER_BOMB)) return;
                         p.config.items ~= item;
                     }
                     item = p.config.items.empty ? Item.NONE : p.config.items.back;
@@ -263,6 +215,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                 if (currentPlayer.config.items.length <= 1) return;
                 if (currentPlayer.config.items.back == Item.BOWSER_BOMB) return;
                 currentPlayer.config.items = currentPlayer.config.items.back ~ currentPlayer.config.items[0..$-1];
+                currentPlayer.item = currentPlayer.config.items.back;
                 saveConfig();
             });
         }
@@ -285,4 +238,52 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
 shared static this() {
     pluginFactory = (name, hash) => new MarioParty2(name, hash);
+}
+
+enum Board : ushort {
+    WESTERN = 0,
+    PIRATE  = 1,
+    HORROR  = 2,
+    SPACE   = 3,
+    MYSTERY = 4,
+    BOWSER  = 5
+}
+
+enum Item : byte {
+    NONE             = -1,
+    MUSHROOM         =  0,
+    SKELETON_KEY     =  1,
+    PLUNDER_CHEST    =  2,
+    BOWSER_BOMB      =  3,
+    DUELING_GLOVE    =  4,
+    WARP_BLOCK       =  5,
+    GOLDEN_MUSHROOM  =  6,
+    BOO_BELL         =  7,
+    BOWSER_SUIT      =  8,
+    MAGIC_LAMP       =  9
+}
+
+enum Scene : uint {
+    BOOT                =   0,
+    CHANCE_TIME         =  52,
+    TRANSITION          =  61,
+    WESTERN_LAND_BOARD  =  62,
+    PIRATE_LAND_BOARD   =  65,
+    HORROR_LAND_BOARD   =  67,
+    SPACE_LAND_BOARD    =  69,
+    MYSTERY_LAND_BOARD  =  71,
+    BOWSER_LAND_BOARD   =  73,
+    FINAL_RESULTS       =  81,
+    FINISH_BOARD        =  82,
+    BOWSER_EVENT        =  83,
+    START_BOARD         =  85,
+    OPENING_CREDITS     =  87,
+    GAME_SETUP          =  88,
+    MAIN_MENU           =  91,
+    MINI_GAME_LAND      =  92,
+    MINI_GAME_RULES_2   =  95,
+    MINI_GAME_RULES     =  96,
+    TITLE_SCREEN        =  98,
+    BATTLE_GAME_RESULTS = 111,
+    MINI_GAME_RESULTS   = 112
 }

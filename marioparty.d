@@ -15,32 +15,6 @@ enum Color : ubyte {
     GREEN = 4
 }
 
-class MiniGame {
-    enum Type {
-        ONE_V_THREE,
-        TWO_V_TWO,
-        FOUR_PLAYER,
-        BATTLE,
-        DUEL,
-        ITEM,
-        CHANCE,
-        SPECIAL,
-        GAMBLE
-    }
-
-    const ubyte id;
-    const Type type;
-    const string name;
-    bool enabled;
-
-    this(ubyte id, Type type, string name, bool enabled = true) {
-        this.id = id;
-        this.type = type;
-        this.name = name;
-        this.enabled = enabled;
-    }
-}
-
 class MarioPartyConfig {
     bool altBonus = true;
     bool alwaysDuel = true;
@@ -111,7 +85,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     override void onStart() {
         super.onStart();
 
-        allocConsole();
+        //allocConsole();
 
         currentScene.onWrite((ref Scene scene) {
             if (scene != currentScene) {
@@ -185,16 +159,13 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             });
 
             static if (is(typeof(booRoutinePtr))) {
-                auto previousRoutinePtr = Ptr!Instruction(0);
+                Ptr!Instruction previousRoutinePtr = 0;
                 auto booRoutinePtrHandler = delegate void(ref Ptr!Instruction routinePtr) {
                     if (!routinePtr || routinePtr == previousRoutinePtr || !isBoardScene()) return;
                     if (previousRoutinePtr) {
                         executeHandlers.remove(previousRoutinePtr);
-                        writefln("\tBoo Routine: %08X", 0);
                     }
-                    writefln("\tBoo Routine: %08X", routinePtr);
                     routinePtr.onExec({
-                        writeln("\tBOO!");
                         teammates(currentPlayer).each!((t) {
                             t.coins = 0;
                             t.stars = 0;
@@ -212,8 +183,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                 currentScene.onWrite((ref Scene scene) {
                     if (!isBoardScene(scene) && previousRoutinePtr) {
                         executeHandlers.remove(previousRoutinePtr);
-                        previousRoutinePtr = Ptr!Instruction(0);
-                        writefln("\tBoo Routine: %08X", 0);
+                        previousRoutinePtr = 0;
                     }
                 });
                 booRoutinePtrHandler(booRoutinePtr);

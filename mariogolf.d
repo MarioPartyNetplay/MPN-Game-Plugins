@@ -124,8 +124,8 @@ class MarioGolf64 : Game!Config {
         if (config.autoSwing) {
             0x8020AB78.onExec({
                 if (powerCursor == 69) {
-                    int offset = cast(int)round(random.normal);
-                    powerCursor = clamp(60 + offset, 0, 69);
+                    int offset = cast(int)round(random.normal * 0.75); // 0 ~ 50%, ≤1 ~ 95%, ≤2 ~ 99.9%, ≤3 ~ 100.0%
+                    powerCursor = clamp(60 + offset, 0, 69);           // 0 ~ 50%, ±1 ~ 45%, ±2 ~  4.9%, ±3 ~   0.1%
                 }
             });
         }
@@ -134,8 +134,8 @@ class MarioGolf64 : Game!Config {
             0x8020AB78.onExec({
                 if (currentPlayerId >= 4) return;
                 if (currentPlayer.cpu) {
-                    int offset = cast(int)round(random.normal * 0.75); // 0 ~ 50%, ≤1 ~ 95%, ≤2 ~ 99.9%, ≤3 ~ 100.0%
-                    powerCursor = clamp(60 + offset, 0, 69);           // 0 ~ 50%, ±1 ~ 45%, ±2 ~  4.9%, ±3 ~   0.1%
+                    int offset = cast(int)round(random.normal * 0.5);
+                    powerCursor = clamp(60 + offset, 0, 69);
                 }
             });
         }
