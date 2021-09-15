@@ -1,0 +1,288 @@
+module me.timz.n64.marioparty2;
+
+import me.timz.n64.marioparty;
+import me.timz.n64.plugin;
+import std.algorithm;
+import std.range;
+import std.stdio;
+import std.json;
+import std.conv;
+import std.random;
+import std.stdio;
+
+class PlayerConfig {
+    int team;
+    Item[] items;
+    
+    this() {}
+    this(int team) { this.team = team; }
+}
+
+class MarioParty2Config : MarioPartyConfig {
+    bool carryThreeItems = true;
+    bool randomBoardMiniGames = true;
+    PlayerConfig[] players = [
+        new PlayerConfig(0),
+        new PlayerConfig(0),
+        new PlayerConfig(1),
+        new PlayerConfig(1)
+    ];
+}
+
+enum Board : ushort {
+    WESTERN = 0,
+    PIRATE  = 1,
+    HORROR  = 2,
+    SPACE   = 3,
+    MYSTERY = 4,
+    BOWSER  = 5
+}
+
+enum Item : byte {
+    NONE             = -1,
+    MUSHROOM         =  0,
+    SKELETON_KEY     =  1,
+    PLUNDER_CHEST    =  2,
+    BOWSER_BOMB      =  3,
+    DUELING_GLOVE    =  4,
+    WARP_BLOCK       =  5,
+    GOLDEN_MUSHROOM  =  6,
+    BOO_BELL         =  7,
+    BOWSER_SUIT      =  8,
+    MAGIC_LAMP       =  9
+}
+
+enum Scene : uint {
+    BOOT                =   0,
+    CHANCE_TIME         =  52,
+    TRANSITION          =  61,
+    WESTERN_LAND_BOARD  =  62,
+    PIRATE_LAND_BOARD   =  65,
+    HORROR_LAND_BOARD   =  67,
+    SPACE_LAND_BOARD    =  69,
+    MYSTERY_LAND_BOARD  =  71,
+    BOWSER_LAND_BOARD   =  73,
+    FINAL_RESULTS       =  81,
+    FINISH_BOARD        =  82,
+    BOWSER              =  83,
+    START_BOARD         =  85,
+    OPENING_CREDITS     =  87,
+    GAME_SETUP          =  88,
+    MAIN_MENU           =  91,
+    MINI_GAME_LAND      =  92,
+    MINI_GAME_RULES_2   =  95,
+    MINI_GAME_RULES     =  96,
+    INTRODUCTION        =  98,
+    BATTLE_GAME_RESULTS = 111,
+    MINI_GAME_RESULTS   = 112
+}
+
+union Chain {
+    ubyte[8] _data;
+    mixin Field!(4, Ptr!ushort, "spaces");
+}
+
+union Space {
+    static enum Type : ubyte {
+        BLUE         = 0x1,
+        RED          = 0x2,
+        EMPTY        = 0x3,
+        HAPPENING    = 0x4,
+        CHANCE       = 0x5,
+        ITEM         = 0x6,
+        BANK         = 0x7,
+        INTERSECTION = 0x8,
+        BATTLE       = 0x9,
+        BOWSER       = 0xC,
+        ARROW        = 0xD,
+        TOAD         = 0xE,
+        BABY_BOWSER  = 0xF
+    }
+
+    ubyte[36] _data;
+    mixin Field!(1, Type, "type");
+}
+
+union Player {
+    ubyte[52] _data;
+    mixin Field!(0x03, ubyte, "controller");
+    mixin Field!(0x07, ubyte, "flags");
+    mixin Field!(0x08, ushort, "coins");
+    mixin Field!(0x0E, ushort, "stars");
+    mixin Field!(0x10, ushort, "chain");
+    mixin Field!(0x12, ushort, "space");
+    mixin Field!(0x19, Item, "item");
+    mixin Field!(0x1B, Color, "color");
+    mixin Field!(0x28, ushort, "gameCoins");
+    mixin Field!(0x2A, ushort, "maxCoins");
+    mixin Field!(0x2D, ubyte, "redSpaces");
+    mixin Field!(0x32, ubyte, "itemSpaces");
+}
+
+union Memory {
+    ubyte[0x400000] ram;
+    mixin Field!(0x800FD2C0, Arr!(Player, 4), "players");
+    mixin Field!(0x800FA63C, Scene, "currentScene");
+    mixin Field!(0x800F93AE, ushort, "turnLimit");
+    mixin Field!(0x800F93B0, ushort, "currentTurn");
+    mixin Field!(0x800F93C6, ushort, "currentPlayerIndex");
+    mixin Field!(0x800DF645, ubyte, "numberOfRolls");
+    mixin Field!(0x800DF718, Ptr!Instruction, "booRoutinePtr");
+    mixin Field!(0x80064200, Instruction, "duelRoutine");
+    mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
+    mixin Field!(0x80018B28, Instruction, "randomByteRoutine");
+    mixin Field!(0x8004DE7C, Instruction, "openItemMenuRoutine");
+    mixin Field!(0x800F93AA, Board, "currentBoard");
+    mixin Field!(0x800E18D4, Ptr!Space, "spaceData");
+    mixin Field!(0x800E18D8, Ptr!Chain, "chainData");
+    mixin Field!(0x800F851A, byte, "itemMenuOpen");
+}
+
+class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
+    this(string name, string hash) {
+        super(name, hash);
+    }
+
+    alias isBoardScene = typeof(super).isBoardScene;
+    alias isScoreScene = typeof(super).isScoreScene;
+
+    override bool isBoardScene(Scene scene) const {
+        switch (scene) {
+            case Scene.WESTERN_LAND_BOARD:
+            case Scene.PIRATE_LAND_BOARD:
+            case Scene.HORROR_LAND_BOARD:
+            case Scene.SPACE_LAND_BOARD:
+            case Scene.MYSTERY_LAND_BOARD:
+            case Scene.BOWSER_LAND_BOARD:
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    override bool isScoreScene(Scene scene) const {
+        switch (scene) {
+            case Scene.CHANCE_TIME:
+            case Scene.FINISH_BOARD:
+            case Scene.BOWSER:
+            case Scene.START_BOARD:
+            case Scene.BATTLE_GAME_RESULTS:
+            case Scene.MINI_GAME_RESULTS:
+                return true;
+            default:
+                return isBoardScene(scene);
+        }
+    }
+
+    short getSpaceIndex(Player p) {
+        if (!chainData) return -1;
+        auto spaces = chainData[p.chain].spaces;
+        if (!spaces) return -1;
+        return spaces[p.space];
+    }
+
+    Space* getSpace(Player p) {
+        auto i = getSpaceIndex(p);
+        return i >= 0 ? &spaceData[i] : null;
+    }
+
+    bool itemsFull(Player p) {
+        return p.config.items.length >= (p.isCPU ? 1 : 3);
+    }
+
+    override void onStart() {
+        super.onStart();
+
+        if (config.teams) {
+            duelRoutine.addr.onExec({
+                if (!isBoardScene()) return;
+                writeln("\tDUEL!");
+                teammates(currentPlayer).each!((t) {
+                    t.coins = 0;
+                });
+            });
+            duelCancelRoutine.addr.onExec({
+                if (!isBoardScene()) return;
+                teammates(currentPlayer).each!((t) {
+                    t.coins = currentPlayer.coins;
+                });
+            });
+        }
+
+        if (config.alwaysDuel) {
+            0x800661AC.onExec({ if (isBoardScene()) gpr.v0 = 1; });
+        }
+
+        if (config.carryThreeItems) {
+            players.each!((p) {
+                p.item.onRead((ref Item item) {
+                    if (!isBoardScene()) return;
+                    auto space = getSpace(p);
+                    if (p.config.items.empty) {
+                        item = Item.NONE;
+                    } else if (itemsFull(p) || itemMenuOpen || p.config.items.back == Item.BOWSER_BOMB || *pc == 0x8005EEA8 /* Display Item Icon */) {
+                        item = p.config.items.back;
+                    } else if (space) {
+                        if (space.type == Space.Type.INTERSECTION && p.config.items.canFind(Item.SKELETON_KEY)) {
+                            item = Item.SKELETON_KEY;
+                        } else {
+                            item = Item.NONE;
+                        }
+                    } else {
+                        item = Item.NONE;
+                    }
+                });
+
+                p.item.onWrite((ref Item item) {
+                    if (!isBoardScene()) return;
+                    if (item == Item.NONE) {
+                        if (!p.config.items.empty) {
+                            auto space = getSpace(p);
+                            if (space && space.type == Space.Type.INTERSECTION) {
+                                auto i = p.config.items.countUntil(Item.SKELETON_KEY);
+                                if (i >= 0) p.config.items = p.config.items.remove(i);
+                            } else {
+                                p.config.items.popBack();
+                            }
+                        }
+                    } else if (item == Item.BOWSER_BOMB && p.config.items.canFind(Item.BOWSER_BOMB)) {
+
+                    } else if (itemsFull(p)) {
+
+                    } else {
+                        p.config.items ~= item;
+                    }
+                    item = p.config.items.empty ? Item.NONE : p.config.items.back;
+                    saveConfig();
+                });
+            });
+
+            openItemMenuRoutine.addr.onExec({
+                if (!isBoardScene()) return;
+                if (currentPlayer is null) return;
+                if (currentPlayer.config.items.length <= 1) return;
+                if (currentPlayer.config.items.back == Item.BOWSER_BOMB) return;
+                currentPlayer.config.items = currentPlayer.config.items.back ~ currentPlayer.config.items[0..$-1];
+                saveConfig();
+            });
+        }
+
+        if (config.randomBoardMiniGames) {
+            currentBoard.onRead((ref Board board) {
+                if (!isBoardScene()) return;
+                switch (*pc) {
+                    case 0x80064574: // Duel Mini-Game
+                    case 0x80066428: // Item Mini-Game
+                        board = random.uniform!Board;
+                        break;
+                    default:
+                        break;
+                }
+            });
+        }
+    }
+}
+
+shared static this() {
+    pluginFactory = (name, hash) => new MarioParty2(name, hash);
+}
