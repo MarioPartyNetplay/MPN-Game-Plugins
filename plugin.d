@@ -387,7 +387,7 @@ extern (C) {
             fpr = _fpr;
             memory = _memory[0 .. _memorySize];
             frame = 0;
-            previous.each!((ref b) { b = 0; });
+            previous.each!((ref b) { b.value = 0; });
             executeHandlers.clear();
             executeOnceHandlers.clear();
             handlers!1.read.clear();
