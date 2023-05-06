@@ -76,17 +76,17 @@ class MarioGolf64 : Game!Config {
     override void onStart() {
         super.onStart();
 
-        // Fix Grid
-        float f2, f4;
-        0x80065798.onExec({ f2 = fpr.f2; f4 = fpr.f4; });
-        0x80082D78.onExec({ gpr.v0 += cast(int)(f4 * 4) % 4; });
-        0x80082D8C.onExec({ gpr.v1 += cast(int)(f2 * 4) % 4; });
-        0x800833FC.onExec({ gpr.v0 += cast(int)(fpr.f6); });
-        0x80083434.onExec({ gpr.v1 += cast(int)(fpr.f6); });
-        0x80083868.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
-        0x800838A0.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
-        0x800838CC.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
-        0x800838F0.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
+        // Smooth Grid
+        //float f2, f4;
+        //0x80065798.onExec({ f2 = fpr.f2; f4 = fpr.f4; });
+        //0x80082D78.onExec({ gpr.v0 += cast(int)(f4 * 4) % 4; });
+        //0x80082D8C.onExec({ gpr.v1 += cast(int)(f2 * 4) % 4; });
+        //0x800833FC.onExec({ gpr.v0 += cast(int)(fpr.f6); }); // Most important lines
+        //0x80083434.onExec({ gpr.v1 += cast(int)(fpr.f6); }); // Most important lines
+        //0x80083868.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
+        //0x800838A0.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
+        //0x800838CC.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
+        //0x800838F0.onExec({ gpr.v0 -= cast(int)(fpr.f6 / 2) + 2; });
 
         // Adjust Percentages
         0x8008B908.onExec({
