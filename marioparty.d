@@ -37,16 +37,12 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             this.data = &data;
             this.config = config;
         }
-        @property bool isCPU() const { return flags & 1; }
-        bool isAheadOf(Player o) const { return stars > o.stars || stars == o.stars && coins > o.coins; }
-
-        alias data this;
+        @property bool isCPU() const { return data.flags & 1; }
+        bool isAheadOf(Player o) const { return data.stars > o.data.stars || data.stars == o.data.stars && data.coins > o.data.coins; }
     }
 
     MemoryType* data;
     Player[] players;
-
-    alias data this;
 
     this(string name, string hash) {
         super(name, hash);
@@ -59,17 +55,17 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     }
 
     @property Player currentPlayer() {
-        return currentPlayerIndex < 4 ? players[currentPlayerIndex] : null;
+        return data.currentPlayerIndex < 4 ? players[data.currentPlayerIndex] : null;
     }
 
     abstract bool isBoardScene(Scene scene) const;
     abstract bool isScoreScene(Scene scene) const;
-    bool isBoardScene() const { return isBoardScene(currentScene); }
-    bool isScoreScene() const { return isScoreScene(currentScene); }
+    bool isBoardScene() const { return isBoardScene(data.currentScene); }
+    bool isScoreScene() const { return isScoreScene(data.currentScene); }
 
     void updateTeams() {
         players.dup.sort!(
-            (a, b) => (a.isCPU ? 4 : a.controller) < (b.isCPU ? 4 : b.controller),
+            (a, b) => (a.isCPU ? 4 : a.data.controller) < (b.isCPU ? 4 : b.data.controller),
             SwapStrategy.stable
         ).each!((i, p) { p.config = config.players[i]; });
     }
@@ -85,16 +81,16 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     override void onStart() {
         super.onStart();
 
-        //allocConsole();
+        allocConsole();
 
-        currentScene.onWrite((ref Scene scene) {
-            if (scene != currentScene) {
+        data.currentScene.onWrite((ref Scene scene) {
+            if (scene != data.currentScene) {
                 writeln("Scene: ", scene);
             }
         });
 
-        static if (is(typeof(randomByteRoutine))) {
-            randomByteRoutine.addr.onExec({
+        static if (is(typeof(data.randomByteRoutine))) {
+            data.randomByteRoutine.addr.onExec({
                 gpr.v0 = random.uniform!ubyte;
             });
         }
@@ -104,61 +100,61 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                 updateTeams();
             }
 
-            currentScene.onWrite((ref Scene scene) {
+            data.currentScene.onWrite((ref Scene scene) {
                 if (isBoardScene(scene)) {
                     updateTeams();
                 }
             });
             
             players.each!((p) {
-                p.coins.onWrite((ref ushort coins) {
+                p.data.coins.onWrite((ref ushort coins) {
                     if (!isScoreScene()) return;
                     teammates(p).each!((t) {
-                        t.coins = coins;
-                        t.stars = p.stars;
+                        t.data.coins = coins;
+                        t.data.stars = p.data.stars;
                     });
                 });
-                p.stars.onWrite((ref typeof(p.stars) stars) {
+                p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
                     if (!isScoreScene()) return;
                     teammates(p).each!((t) {
-                        t.coins = p.coins;
-                        t.stars = stars;
+                        t.data.coins = p.data.coins;
+                        t.data.stars = stars;
                     });
                 });
-                p.color.onWrite((ref Color color) {
+                p.data.color.onWrite((ref Color color) {
                     if (!isBoardScene()) return;
                     if (color == Color.CLEAR) return;
                     auto t = teammates(p).find!(t => t.index < p.index);
                     if (!t.empty) {
-                        color = t.front.color;
+                        color = t.front.data.color;
                     } else if (color == Color.GREEN) {
                         color = (random.uniform01() < 0.75 ? Color.BLUE : Color.RED);
                     }
                 });
-                p.flags.onWrite((ref ubyte flags) {
+                p.data.flags.onWrite((ref ubyte flags) {
                     if (!isBoardScene()) return;
-                    if (p.flags == flags) return;
-                    p.flags = flags;
+                    if (p.data.flags == flags) return;
+                    p.data.flags = flags;
                     updateTeams();
                 });
-                p.controller.onWrite((ref ubyte controller) {
+                p.data.controller.onWrite((ref ubyte controller) {
                     if (!isBoardScene()) return;
-                    if (p.controller == controller) return;
-                    p.controller = controller;
+                    if (p.data.controller == controller) return;
+                    p.data.controller = controller;
                     updateTeams();
                 });
             });
             
-            currentPlayerIndex.onWrite((ref typeof(currentPlayerIndex) index) {
+            data.currentPlayerIndex.onWrite((ref typeof(data.currentPlayerIndex) index) {
                 if (!isBoardScene()) return;
-                currentPlayerIndex = index;
+                data.currentPlayerIndex = index;
                 teammates(currentPlayer).each!((t) {
-                    t.coins = currentPlayer.coins;
-                    t.stars = currentPlayer.stars;
+                    t.data.coins = currentPlayer.data.coins;
+                    t.data.stars = currentPlayer.data.stars;
                 });
             });
 
-            static if (is(typeof(booRoutinePtr))) {
+            static if (is(typeof(data.booRoutinePtr))) {
                 Ptr!Instruction previousRoutinePtr = 0;
                 auto booRoutinePtrHandler = delegate void(ref Ptr!Instruction routinePtr) {
                     if (!routinePtr || routinePtr == previousRoutinePtr || !isBoardScene()) return;
@@ -167,35 +163,35 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     }
                     routinePtr.onExec({
                         teammates(currentPlayer).each!((t) {
-                            t.coins = 0;
-                            t.stars = 0;
+                            t.data.coins = 0;
+                            t.data.stars = 0;
                         });
                         gpr.ra.onExecOnce({
                             teammates(currentPlayer).each!((t) {
-                                t.coins = currentPlayer.coins;
-                                t.stars = currentPlayer.stars;
+                                t.data.coins = currentPlayer.data.coins;
+                                t.data.stars = currentPlayer.data.stars;
                             });
                         });
                     });
                     previousRoutinePtr = routinePtr;
                 };
-                booRoutinePtr.onWrite(booRoutinePtrHandler);
-                currentScene.onWrite((ref Scene scene) {
+                data.booRoutinePtr.onWrite(booRoutinePtrHandler);
+                data.currentScene.onWrite((ref Scene scene) {
                     if (!isBoardScene(scene) && previousRoutinePtr) {
                         executeHandlers.remove(previousRoutinePtr);
                         previousRoutinePtr = 0;
                     }
                 });
-                booRoutinePtrHandler(booRoutinePtr);
+                booRoutinePtrHandler(data.booRoutinePtr);
             }
         }
 
         if (config.altBonus) {
             players.each!((p) {
-                p.itemSpaces.onWrite((ref ubyte itemSpaces) { if (!isBoardScene()) return; p.gameCoins = itemSpaces; });
-                p.redSpaces.onWrite( (ref ubyte redSpaces)  { if (!isBoardScene()) return; p.maxCoins  = redSpaces; });
-                p.gameCoins.onWrite( (ref ushort gameCoins) { if (!isScoreScene()) return; gameCoins   = p.itemSpaces; });
-                p.maxCoins.onWrite(  (ref ushort maxCoins)  { if (!isScoreScene()) return; maxCoins    = p.redSpaces; });
+                p.data.itemSpaces.onWrite((ref ubyte itemSpaces) { if (!isBoardScene()) return; p.data.gameCoins = itemSpaces; });
+                p.data.redSpaces.onWrite( (ref ubyte redSpaces)  { if (!isBoardScene()) return; p.data.maxCoins  = redSpaces; });
+                p.data.gameCoins.onWrite( (ref ushort gameCoins) { if (!isScoreScene()) return; gameCoins   = p.data.itemSpaces; });
+                p.data.maxCoins.onWrite(  (ref ushort maxCoins)  { if (!isScoreScene()) return; maxCoins    = p.data.redSpaces; });
             });
         }
 

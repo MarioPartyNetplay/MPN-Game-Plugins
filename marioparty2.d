@@ -127,15 +127,15 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
     }
 
     short getSpaceIndex(Player p) {
-        if (!chainData) return -1;
-        auto spaces = chainData[p.chain].spaces;
+        if (!data.chainData) return -1;
+        auto spaces = data.chainData[p.data.chain].spaces;
         if (!spaces) return -1;
-        return spaces[p.space];
+        return spaces[p.data.space];
     }
 
     Space* getSpace(Player p) {
         auto i = getSpaceIndex(p);
-        return i >= 0 ? &spaceData[i] : null;
+        return i >= 0 ? &data.spaceData[i] : null;
     }
 
     bool itemsFull(Player p) {
@@ -146,17 +146,17 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
         super.onStart();
 
         if (config.teams) {
-            duelRoutine.addr.onExec({
+            data.duelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
                 writeln("\tDUEL!");
                 teammates(currentPlayer).each!((t) {
-                    t.coins = 0;
+                    t.data.coins = 0;
                 });
             });
-            duelCancelRoutine.addr.onExec({
+            data.duelCancelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
                 teammates(currentPlayer).each!((t) {
-                    t.coins = currentPlayer.coins;
+                    t.data.coins = currentPlayer.data.coins;
                 });
             });
         }
@@ -167,13 +167,13 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
         if (config.carryThreeItems) {
             players.each!((p) {
-                p.item.onRead((ref Item item) {
+                p.data.item.onRead((ref Item item) {
                     if (!isBoardScene()) return;
                     if (p.config.items.empty) {
                         item = Item.NONE;
                     } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
                         item = Item.BOWSER_BOMB;
-                    } else if (itemsFull(p) || itemMenuOpen || *pc == 0x8005EEA8 /* Display Item Icon */) {
+                    } else if (itemsFull(p) || data.itemMenuOpen || *pc == 0x8005EEA8 /* Display Item Icon */) {
                         item = p.config.items.back;
                     } else {
                         item = Item.NONE;
@@ -185,7 +185,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                     }
                 });
 
-                p.item.onWrite((ref Item item) {
+                p.data.item.onWrite((ref Item item) {
                     if (!isBoardScene()) return;
                     if (item == Item.NONE) {
                         if (p.config.items.empty) return;
@@ -209,19 +209,19 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                 });
             });
 
-            openItemMenuRoutine.addr.onExec({
+            data.openItemMenuRoutine.addr.onExec({
                 if (!isBoardScene()) return;
                 if (currentPlayer is null) return;
                 if (currentPlayer.config.items.length <= 1) return;
                 if (currentPlayer.config.items.back == Item.BOWSER_BOMB) return;
                 currentPlayer.config.items = currentPlayer.config.items.back ~ currentPlayer.config.items[0..$-1];
-                currentPlayer.item = currentPlayer.config.items.back;
+                currentPlayer.data.item = currentPlayer.config.items.back;
                 saveConfig();
             });
         }
 
         if (config.randomBoardMiniGames) {
-            currentBoard.onRead((ref Board board) {
+            data.currentBoard.onRead((ref Board board) {
                 if (!isBoardScene()) return;
                 switch (*pc) {
                     case 0x80064574: // Duel Mini-Game

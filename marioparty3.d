@@ -19,7 +19,7 @@ class PlayerConfig {
 
 class MarioParty3Config : MarioPartyConfig {
     bool replaceChanceSpaces = true;
-    bool moveInAnyDirection = true;
+    //bool moveInAnyDirection = true;
     MiniGame[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(0),
@@ -31,6 +31,7 @@ class MarioParty3Config : MarioPartyConfig {
 
 union Space {
     static enum Type : ubyte {
+        BLUE     = 0x1,
         CHANCE   = 0x5,
         GAME_GUY = 0xF
     }
@@ -109,14 +110,14 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         super.onStart();
 
         if (config.teams) {
-            duelRoutine.addr.onExec({
+            data.duelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
                 teammates(currentPlayer).each!((t) {
-                    t.coins = 0;
+                    t.data.coins = 0;
                 });
                 gpr.ra.onExecOnce({
                     teammates(currentPlayer).each!((t) {
-                        t.coins = currentPlayer.coins;
+                        t.data.coins = currentPlayer.data.coins;
                     });
                 });
             });
@@ -183,7 +184,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             });
             0x800DF468.onExec({
                 if (!isBoardScene()) return;
-                auto t = miniGameSelection[gpr.v1].type;
+                auto t = data.miniGameSelection[gpr.v1].type;
                 miniGameList[t] ~= miniGameScreen[t][gpr.v1];
                 miniGameList[t].swapAt(0, uniform(0, miniGameList[t].length / 3, random));
                 miniGameScreen[t][gpr.v1] = miniGameList[t].front;

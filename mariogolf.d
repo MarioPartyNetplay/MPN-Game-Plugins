@@ -61,8 +61,6 @@ class Config {
 class MarioGolf64 : Game!Config {
     Memory* data;
 
-    alias data this;
-
     this(string name, string hash) {
         super(name, hash);
 
@@ -70,7 +68,7 @@ class MarioGolf64 : Game!Config {
     }
 
     ref Player currentPlayer() {
-        return players[currentPlayerId];
+        return data.players[data.currentPlayerId];
     }
 
     override void onStart() {
@@ -90,9 +88,9 @@ class MarioGolf64 : Game!Config {
 
         // Adjust Percentages
         0x8008B908.onExec({
-            gpr.a2 = cast(uint)round(currentClubType == ClubType.PUTTER
-                ? (isRaining ? 0.80 : 1) * 100
-                : (isRaining ? 0.95 : 1) * (0.25 * gpr.a2 + 0.75 * gpr.a3));
+            gpr.a2 = cast(uint)round(data.currentClubType == ClubType.PUTTER
+                ? (data.isRaining ? 0.80 : 1) * 100
+                : (data.isRaining ? 0.95 : 1) * (0.25 * gpr.a2 + 0.75 * gpr.a3));
 
             auto a = Ptr!char(gpr.a1);
             char[] oldFormat;
@@ -104,38 +102,38 @@ class MarioGolf64 : Game!Config {
         // Move text to the right a bit
         0x8008B934.onExec({ gpr.a1 += 15; });
         // Show actual shot power
-        0x8008B9BC.onExec({ if (shotPower) { gpr.v0 = gpr.v0 * shotPower / 30; } });
-        0x8008B9E4.onExec({ if (shotPower) { gpr.v0 = gpr.v0 * shotPower / 30; } });
+        0x8008B9BC.onExec({ if (data.shotPower) { gpr.v0 = gpr.v0 * data.shotPower / 30; } });
+        0x8008B9E4.onExec({ if (data.shotPower) { gpr.v0 = gpr.v0 * data.shotPower / 30; } });
 
         if (config.expandMeetArea) {
-            clubs.each!((ref c) {
+            data.clubs.each!((ref c) {
                 c.meetArea.onRead((ref ushort m) { m = m / 2 + 59; });
             });
         }
 
         if (config.improveMaple) {
             foreach (i; 28..42) {
-                clubs[i].distance.onRead((ref ushort distance) { distance = cast(ushort)(distance * 1.08); });
-                clubs[i].powerSpeed.onRead( (ref uint speed) { speed = cast(uint)(speed * 1.125); });
-                clubs[i].normalSpeed.onRead((ref uint speed) { speed = cast(uint)(speed * 1.125); });
+                data.clubs[i].distance.onRead((ref ushort distance) { distance = cast(ushort)(distance * 1.08); });
+                data.clubs[i].powerSpeed.onRead( (ref uint speed) { speed = cast(uint)(speed * 1.125); });
+                data.clubs[i].normalSpeed.onRead((ref uint speed) { speed = cast(uint)(speed * 1.125); });
             }
         }
 
         if (config.autoSwing) {
             0x8020AB78.onExec({
-                if (powerCursor == 69) {
+                if (data.powerCursor == 69) {
                     int offset = cast(int)round(random.normal * 0.75); // 0 ~ 50%, ≤1 ~ 95%, ≤2 ~ 99.9%, ≤3 ~ 100.0%
-                    powerCursor = clamp(60 + offset, 0, 69);           // 0 ~ 50%, ±1 ~ 45%, ±2 ~  4.9%, ±3 ~   0.1%
+                    data.powerCursor = clamp(60 + offset, 0, 69);      // 0 ~ 50%, ±1 ~ 45%, ±2 ~  4.9%, ±3 ~   0.1%
                 }
             });
         }
 
         if (config.imperfectCPUMeetArea) {
             0x8020AB78.onExec({
-                if (currentPlayerId >= 4) return;
+                if (data.currentPlayerId >= 4) return;
                 if (currentPlayer.cpu) {
                     int offset = cast(int)round(random.normal * 0.5);
-                    powerCursor = clamp(60 + offset, 0, 69);
+                    data.powerCursor = clamp(60 + offset, 0, 69);
                 }
             });
         }
