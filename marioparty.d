@@ -16,7 +16,6 @@ enum Color : ubyte {
 }
 
 class MarioPartyConfig {
-    bool altBonus = true;
     bool alwaysDuel = true;
     bool lastPlaceDoubleRoll = true;
     bool teams = true;
@@ -184,15 +183,6 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                 });
                 booRoutinePtrHandler(data.booRoutinePtr);
             }
-        }
-
-        if (config.altBonus) {
-            players.each!((p) {
-                p.data.itemSpaces.onWrite((ref ubyte itemSpaces) { if (!isBoardScene()) return; p.data.gameCoins = itemSpaces; });
-                p.data.redSpaces.onWrite( (ref ubyte redSpaces)  { if (!isBoardScene()) return; p.data.maxCoins  = redSpaces; });
-                p.data.gameCoins.onWrite( (ref ushort gameCoins) { if (!isScoreScene()) return; gameCoins   = p.data.itemSpaces; });
-                p.data.maxCoins.onWrite(  (ref ushort maxCoins)  { if (!isScoreScene()) return; maxCoins    = p.data.redSpaces; });
-            });
         }
 
         static if (is(typeof(numberOfRolls))) {

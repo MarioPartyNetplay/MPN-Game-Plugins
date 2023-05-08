@@ -8,6 +8,7 @@ import std.range;
 import std.conv;
 import std.traits;
 import std.stdio;
+import std.string;
 
 class PlayerConfig {
     int team;
@@ -18,6 +19,7 @@ class PlayerConfig {
 }
 
 class MarioParty3Config : MarioPartyConfig {
+    bool randomBonus = true;
     bool replaceChanceSpaces = true;
     //bool moveInAnyDirection = true;
     MiniGame[] blockedMiniGames;
@@ -48,8 +50,42 @@ union Player {
     mixin Field!(0x1C, Color, "color");
     mixin Field!(0x28, ushort, "gameCoins");
     mixin Field!(0x2A, ushort, "maxCoins");
+    mixin Field!(0x2C, ubyte, "happeningSpaces");
     mixin Field!(0x2D, ubyte, "redSpaces");
+    mixin Field!(0x2E, ubyte, "blueSpaces");
+    mixin Field!(0x2F, ubyte, "chanceSpaces");
+    mixin Field!(0x30, ubyte, "bowserSpaces");
+    mixin Field!(0x31, ubyte, "battleSpaces");
     mixin Field!(0x32, ubyte, "itemSpaces");
+    mixin Field!(0x33, ubyte, "bankSpaces");
+    mixin Field!(0x34, ubyte, "gameGuySpaces");
+
+    uint getBonusStat(BonusType type) {
+        final switch (type) {
+            case BonusType.MINI_GAME:
+                return gameCoins;
+            case BonusType.COIN:
+                return maxCoins;
+            case BonusType.HAPPENING:
+                return happeningSpaces;
+            case BonusType.RED:
+                return redSpaces;
+            case BonusType.BLUE:
+                return blueSpaces;
+            case BonusType.CHANCE:
+                return chanceSpaces;
+            case BonusType.BOWSER:
+                return bowserSpaces;
+            case BonusType.BATTLE:
+                return battleSpaces;
+            case BonusType.ITEM:
+                return itemSpaces;
+            case BonusType.BANK:
+                return bankSpaces;
+            case BonusType.GAMBLING:
+                return gameGuySpaces;
+        }
+    }
 }
 
 union Data {
@@ -65,10 +101,34 @@ union Data {
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
+    mixin Field!(0x80036574, Instruction, "messageBoxLength");
+    mixin Field!(0x800365A8, Instruction, "messageBoxChar");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
+    mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
+    mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
+    mixin Field!(0x80108898, Instruction, "loadBonusStat2a");
+    mixin Field!(0x801088DC, Instruction, "loadBonusStat2b");
+    mixin Field!(0x80108CC0, Instruction, "loadBonusStat3a");
+    mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
 }
 
+immutable BONUS_TEXT = [
+    ["\x02\x0FMini=Game Star\x16\x19", "\x02\x0FMini=Game Stars\x16\x19", "has won the most coins\nin Mini=Games"],
+    ["\x07\x0FCoin Star\x16\x19",      "\x07\x0FCoin Stars\x16\x19",      "had the most\ncoins at any one time\nduring the game"],
+    ["\x05\x0FHappening Star\x16\x19", "\x05\x0FHappening Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"],
+    ["\x03\x0FUnlucky Star\x16\x19",   "\x03\x0FUnlucky Stars\x16\x19",   "landed on the most\n\x03\x0FRed Spaces\x16\x19"],
+    ["\x02\x0FBlue Star\x16\x19",      "\x02\x0FBlue Stars\x16\x19",      "landed on the most\n\x02\x0FBlue Spaces\x16\x19"],
+    ["\x05\x0FChance Star\x16\x19",    "\x05\x0FChance Stars\x16\x19",    "landed on the most\n\x05\x0F\xC2 Spaces\x16\x19"],
+    ["\x03\x0FBowser Star\x16\x19",    "\x03\x0FBowser Stars\x16\x19",    "landed on the most\n\x03\x0FBowser Spaces\x16\x19"],
+    ["\x05\x0FBattle Star\x16\x19",    "\x05\x0FBattle Stars\x16\x19",    "landed on the most\n\x05\x0FBattle Spaces\x16\x19"],
+    ["\x05\x0FItem Star\x16\x19",      "\x05\x0FItem Stars\x16\x19",      "landed on the most\n\x05\x0FItem Spaces\x16\x19"],
+    ["\x05\x0FBanking Star\x16\x19",   "\x05\x0FBanking Stars\x16\x19",   "landed on the most\n\x05\x0FBank Spaces\x16\x19"],
+    ["\x05\x0FGambling Star\x16\x19",  "\x05\x0FGambling Stars\x16\x19",  "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
+];
+
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
+    BonusType[] bonus = [EnumMembers!BonusType];
+
     this(string name, string hash) {
         super(name, hash);
     }
@@ -127,6 +187,67 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             0x800FA854.onExec({ if (isBoardScene()) gpr.v0 = 1; });
         }
 
+        if (config.randomBonus) {
+            string message;
+
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.FINISH_BOARD) {
+                    bonus.randomShuffle(random);
+                    writeln("Bonus: ", bonus[0..3]);
+                }
+            });
+            data.messageBoxLength.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                
+                auto c = Ptr!char(gpr.s0 + 2);
+                message = "";
+                foreach (i; 0..gpr.s1) {
+                    message ~= *(c++);
+                }
+
+                message = message.replace("one\nstar", "one star")
+                                 .replace("\x02\x0F Mini=Game Star\x16\x19", " \x02\x0FMini=Game Star\x16\x19")
+                                 .replace("\x02\x0FMini=Game Star\x16 \x19", "\x02\x0FMini=Game Star\x16\x19 ");
+
+                foreach (b; EnumMembers!BonusType[0..3]) {
+                    auto text = BONUS_TEXT[b].enumerate.filter!(t => message.canFind(t.value));
+                    if (text.empty) continue;
+                    foreach(t; text) message = message.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
+                    break;
+                }
+                
+                gpr.s1 = cast(ushort)message.length;
+            });
+            data.messageBoxChar.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = message[gpr.a0];
+            });
+            data.loadBonusStat1a.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
+            });
+            data.loadBonusStat1b.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
+            });
+            data.loadBonusStat2a.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.COIN]);
+            });
+            data.loadBonusStat2b.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.COIN]);
+            });
+            data.loadBonusStat3a.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.HAPPENING]);
+            });
+            data.loadBonusStat3b.addr.onExec({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.HAPPENING]);
+            });
+        }
+
         if (config.replaceChanceSpaces) {
             0x800FC594.onExec({ 0x800FC5A4.val!Instruction = 0x10000085; });
             0x800EAEF4.onExec({
@@ -134,6 +255,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     gpr.v0 = Space.Type.GAME_GUY;
                 }
             });
+
+            bonus = bonus.filter!(b => b != BonusType.CHANCE).array;
         }
 
         /*
@@ -286,6 +409,7 @@ enum Scene : uint {
     LAST_FIVE_TURNS          =  81,
     GENIE                    =  82,
     START_BOARD              =  83,
+    FINAL_RESULTS            =  85,
     OPENING_CREDITS          =  88,
     MINI_GAME_ROOM_RETRY     = 104,
     MINI_GAME_ROOM           = 105,
@@ -385,6 +509,20 @@ enum MiniGameType {
     ITEM,
     GAMBLE,
     SPECIAL
+}
+
+enum BonusType {
+    MINI_GAME,
+    COIN,
+    HAPPENING,
+    RED,
+    BLUE,
+    CHANCE,
+    BOWSER,
+    BATTLE,
+    ITEM,
+    BANK,
+    GAMBLING
 }
 
 MiniGameType type(MiniGame game) {
