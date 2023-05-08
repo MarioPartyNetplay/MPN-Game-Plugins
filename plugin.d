@@ -379,7 +379,7 @@ extern (C) {
       ubyte* _memory,
       uint _memorySize) {
         try {
-            random.seed([0x545a186ed3563182, 0x0ca2f719a86f1047, 0x5856edfd80d2114e, 0x2d3082d3ee21a65d]);
+            random.seed([hash(0), hash(1), hash(2), hash(3)]);
             window = hwnd;
             addAddress = _addAddress;
             pc = _pc;
