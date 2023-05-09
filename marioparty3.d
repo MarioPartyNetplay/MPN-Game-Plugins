@@ -35,6 +35,10 @@ union Space {
     static enum Type : ubyte {
         BLUE     = 0x1,
         CHANCE   = 0x5,
+        BATTLE   = 0x9,
+        BOWSER   = 0xC,
+        ITEM     = 0xD,
+        STAR     = 0xE,
         GAME_GUY = 0xF
     }
 }
@@ -94,6 +98,7 @@ union Data {
     mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
+    mixin Field!(0x800FB624, Instruction, "battleRoutine");
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
     mixin Field!(0x80036574, Instruction, "messageBoxLength");
     mixin Field!(0x800365A8, Instruction, "messageBoxChar");
@@ -174,6 +179,22 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 gpr.ra.onExecOnce({
                     teammates(currentPlayer).each!((t) {
                         t.data.coins = currentPlayer.data.coins;
+                    });
+                });
+            });
+            
+            data.battleRoutine.addr.onExec({
+                if (!isBoardScene()) return;
+                players.each!((p) {
+                    teammates(p).filter!(t => t.index > p.index).each!((t) {
+                        t.data.coins = 0;
+                    });
+                });
+                gpr.ra.onExecOnce({
+                    players.each!((p) {
+                        teammates(p).filter!(t => t.index > p.index).each!((t) {
+                            t.data.coins = p.data.coins;
+                        });
                     });
                 });
             });
