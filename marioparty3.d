@@ -40,7 +40,7 @@ union Space {
 }
 
 union Player {
-    ubyte[56] _data;
+    ubyte[0x38] _data;
     mixin Field!(0x02, ubyte, "controller");
     mixin Field!(0x04, ubyte, "flags");
     mixin Field!(0x0A, ushort, "coins");
@@ -48,7 +48,7 @@ union Player {
     mixin Field!(0x17, ubyte, "directionFlags");
     mixin Field!(0x18, Arr!(Item, 3), "items");
     mixin Field!(0x1C, Color, "color");
-    mixin Field!(0x28, ushort, "gameCoins");
+    mixin Field!(0x28, ushort, "miniGameCoins");
     mixin Field!(0x2A, ushort, "maxCoins");
     mixin Field!(0x2C, ubyte, "happeningSpaces");
     mixin Field!(0x2D, ubyte, "redSpaces");
@@ -62,30 +62,24 @@ union Player {
 
     uint getBonusStat(BonusType type) {
         final switch (type) {
-            case BonusType.MINI_GAME:
-                return gameCoins;
-            case BonusType.COIN:
-                return maxCoins;
-            case BonusType.HAPPENING:
-                return happeningSpaces;
-            case BonusType.RED:
-                return redSpaces;
-            case BonusType.BLUE:
-                return blueSpaces;
-            case BonusType.CHANCE:
-                return chanceSpaces;
-            case BonusType.BOWSER:
-                return bowserSpaces;
-            case BonusType.BATTLE:
-                return battleSpaces;
-            case BonusType.ITEM:
-                return itemSpaces;
-            case BonusType.BANK:
-                return bankSpaces;
-            case BonusType.GAMBLING:
-                return gameGuySpaces;
+            case BonusType.MINI_GAME: return miniGameCoins;
+            case BonusType.COIN:      return maxCoins;
+            case BonusType.HAPPENING: return happeningSpaces;
+            case BonusType.UNLUCKY:   return redSpaces;
+            case BonusType.BLUE:      return blueSpaces;
+            case BonusType.CHANCE:    return chanceSpaces;
+            case BonusType.BOWSER:    return bowserSpaces;
+            case BonusType.BATTLE:    return battleSpaces;
+            case BonusType.ITEM:      return itemSpaces;
+            case BonusType.BANK:      return bankSpaces;
+            case BonusType.GAMBLING:  return gameGuySpaces;
         }
     }
+}
+
+union PlayerCard {
+    ubyte[0x6C] _data;
+    mixin Field!(0x04, ubyte, "color");
 }
 
 union Data {
@@ -103,7 +97,9 @@ union Data {
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
     mixin Field!(0x80036574, Instruction, "messageBoxLength");
     mixin Field!(0x800365A8, Instruction, "messageBoxChar");
+    mixin Field!(0x800F52C4, Instruction, "determineTeams");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
+    mixin Field!(0x801057E0, Arr!(PlayerCard, 4), "playerCards");
     mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
     mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
     mixin Field!(0x80108898, Instruction, "loadBonusStat2a");
@@ -212,7 +208,9 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 foreach (b; EnumMembers!BonusType[0..3]) {
                     auto text = BONUS_TEXT[b].enumerate.filter!(t => message.canFind(t.value));
                     if (text.empty) continue;
-                    foreach(t; text) message = message.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
+                    foreach(t; text) {
+                        message = message.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
+                    }
                     break;
                 }
                 
@@ -515,7 +513,7 @@ enum BonusType {
     MINI_GAME,
     COIN,
     HAPPENING,
-    RED,
+    UNLUCKY,
     BLUE,
     CHANCE,
     BOWSER,

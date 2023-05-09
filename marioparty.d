@@ -37,7 +37,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             this.config = config;
         }
         @property bool isCPU() const { return data.flags & 1; }
-        bool isAheadOf(Player o) const { return data.stars > o.data.stars || data.stars == o.data.stars && data.coins > o.data.coins; }
+        bool isAheadOf(const Player o) const { return data.stars > o.data.stars || data.stars == o.data.stars && data.coins > o.data.coins; }
     }
 
     MemoryType* data;
@@ -70,11 +70,15 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     }
 
     auto teammates(const Player p) {
-        return players.filter!(t => p && t.config.team == p.config.team && t !is p);
+        return players.filter!(t => p && t !is p && t.config.team == p.config.team);
     }
 
-    bool isInLastPlace(const Player p) {
-        return p && !players.canFind!(o => p.isAheadOf(o));
+    bool isIn4thPlace(const Player p) const {
+        return p && players.filter!(o => o !is p).all!(o => o.isAheadOf(p));
+    }
+
+    bool isInLastPlace(const Player p) const {
+        return p && !players.filter!(o => o !is p).any!(o => p.isAheadOf(o));
     }
 
     override void onStart() {
@@ -110,26 +114,25 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     if (!isScoreScene()) return;
                     teammates(p).each!((t) {
                         t.data.coins = coins;
-                        t.data.stars = p.data.stars;
+                        t.data.maxCoins = max(coins, t.data.coins);
                     });
                 });
                 p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
                     if (!isScoreScene()) return;
                     teammates(p).each!((t) {
-                        t.data.coins = p.data.coins;
                         t.data.stars = stars;
                     });
                 });
+                /*
                 p.data.color.onWrite((ref Color color) {
                     if (!isBoardScene()) return;
                     if (color == Color.CLEAR) return;
                     auto t = teammates(p).find!(t => t.index < p.index);
                     if (!t.empty) {
                         color = t.front.data.color;
-                    } else if (color == Color.GREEN) {
-                        color = (random.uniform01() < 0.75 ? Color.BLUE : Color.RED);
                     }
                 });
+                */
                 p.data.flags.onWrite((ref ubyte flags) {
                     if (!isBoardScene()) return;
                     if (p.data.flags == flags) return;
@@ -143,7 +146,36 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     updateTeams();
                 });
             });
-            
+
+            /*
+            static if (is(typeof(data.playerCards)) && is(typeof(data.drawPlayerColor))) {
+                data.drawPlayerColor.addr.onExec({
+                    if (!isBoardScene()) return;
+                    if (gpr.a1 == Color.CLEAR) return;
+                    auto p = players[gpr.a0];
+                    auto t = teammates(p).find!(t => t.index < p.index);
+                    if (!t.empty) {
+                        gpr.a1 = data.playerCards[t.front.index].color;
+                    }
+                });
+            }
+            */
+
+            static if (is(typeof(data.playerCards)) &&is(typeof(data.determineTeams))) {
+                data.determineTeams.addr.onExec({
+                    if (!isBoardScene()) return;
+
+                    auto splitTeams = players.all!(p => teammates(p).any!(t =>
+                      data.playerCards[t.index].color != data.playerCards[p.index].color));
+                      
+                    if (splitTeams) {
+                        foreach(i; 0..4) {
+                            data.playerCards[i].color = cast(ubyte)players[i].config.team;
+                        }
+                    }
+                });
+            }
+
             data.currentPlayerIndex.onWrite((ref typeof(data.currentPlayerIndex) index) {
                 if (!isBoardScene()) return;
                 data.currentPlayerIndex = index;
@@ -185,11 +217,11 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             }
         }
 
-        static if (is(typeof(numberOfRolls))) {
+        static if (is(typeof(data.numberOfRolls))) {
             if (config.lastPlaceDoubleRoll) {
-                numberOfRolls.onRead((ref ubyte rolls) {
+                data.numberOfRolls.onRead((ref ubyte rolls) {
                     if (!isBoardScene()) return;
-                    if (isInLastPlace(currentPlayer) && rolls < 2) {
+                    if (isIn4thPlace(currentPlayer) && rolls < 2) {
                         rolls = 2;
                     }
                 });
