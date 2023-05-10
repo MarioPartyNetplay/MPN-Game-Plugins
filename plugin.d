@@ -234,23 +234,26 @@ union FPR {
     }
 };
 
-union Buttons {
+enum BUTTON : ushort {
+    C_R = 0x0001,
+    C_L = 0x0002,
+    C_D = 0x0004,
+    C_U = 0x0008,
+    R   = 0x0010,
+    L   = 0x0020,
+    D_R = 0x0100,
+    D_L = 0x0200,
+    D_D = 0x0400,
+    D_U = 0x0800,
+    S   = 0x1000,
+    Z   = 0x2000,
+    B   = 0x4000,
+    A   = 0x8000
+}
+
+union Input {
     struct {
-        union {
-            struct {
-                import std.bitmanip;
-
-                mixin(bitfields!(
-                    bool, "dR", 1, bool, "dL", 1, bool, "dD", 1, bool, "dU", 1,
-                    bool, "s",  1, bool, "z",  1, bool, "b",  1, bool, "a",  1,
-                    bool, "cR", 1, bool, "cL", 1, bool, "cD", 1, bool, "cU", 1,
-                    bool, "tR", 1, bool, "rL", 1, bool, "_1", 1, bool, "_2", 1
-                ));
-            }
-
-            ushort digital;
-        }
-
+        ushort buttons;
         byte analogY;
         byte analogX;
     }
@@ -264,7 +267,7 @@ interface Plugin {
     void loadConfig();
     void saveConfig();
     void onStart();
-    void onFrame(ulong, Buttons*);
+    void onFrame(ulong, Input*);
     void onFinish();
 }
 
@@ -294,7 +297,7 @@ abstract class Game(ConfigType) : Plugin {
     }
 
     void onStart() { }
-    void onFrame(ulong, Buttons*) { }
+    void onFrame(ulong, Input*) { }
     void onFinish() { saveConfig(); }
 }
 
@@ -332,6 +335,18 @@ void onWrite(T)(ref T r, void delegate(ref T, ref T) callback) {
     addAddress(r.addr);
 }
 
+void jal(Address addr, void delegate() callback) {
+    auto ra = *pc + 4;
+    *pc = addr - 4;
+    addr.onExecOnce({
+        auto g = *gpr;
+        auto f = *fpr;
+        gpr.ra = ra;
+        callback();
+        ra.onExecOnce({ *gpr = g; *fpr = f; });
+    });
+} 
+
 void allocConsole() {
     import core.stdc.stdio;
     
@@ -357,7 +372,7 @@ __gshared {
     FPR* fpr;
     ubyte[] memory;
     ulong frame;
-    Buttons[4] previous;
+    Input[4] previous;
     Plugin function(string, string) pluginFactory;
     void delegate(Address)[][Address] executeHandlers;
     void delegate(Address)[][Address] executeOnceHandlers;
@@ -419,22 +434,22 @@ extern (C) {
         }
     }
 
-    export void FrameHandler(Buttons* buttons) {
+    export void FrameHandler(Input* input) {
         if (plugin) {
             if (frame == 0) {
                 try { plugin.onStart(); }
                 catch (Exception e) { handleException(e); }
             }
 
-            try { plugin.onFrame(frame, buttons); }
+            try { plugin.onFrame(frame, input); }
             catch (Exception e) { handleException(e); }
         }
 
         foreach (i; 0..4) {
-            if (buttons[i] && buttons[i] != previous[i]) {
-                random.state[i] ^= hash((frame << 32) | buttons[i]);
+            if (input[i] && input[i] != previous[i]) {
+                random.state[i] ^= hash((frame << 32) | input[i]);
             }
-            previous[i] = buttons[i];
+            previous[i] = input[i];
         }
 
         random.popFront();

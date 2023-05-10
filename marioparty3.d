@@ -22,12 +22,13 @@ class MarioParty3Config : MarioPartyConfig {
     bool randomBonus = true;
     bool replaceChanceSpaces = true;
     //bool moveInAnyDirection = true;
+    bool enhancedTaunts = true;
     MiniGame[] blockedMiniGames;
     PlayerConfig[] players = [
-        new PlayerConfig(0),
-        new PlayerConfig(0),
         new PlayerConfig(1),
-        new PlayerConfig(1)
+        new PlayerConfig(1),
+        new PlayerConfig(2),
+        new PlayerConfig(2)
     ];
 }
 
@@ -93,6 +94,7 @@ union Data {
     mixin Field!(0x800CD05A, ubyte, "turnLimit");
     mixin Field!(0x800CD05B, ubyte, "currentTurn");
     mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
+    mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
     mixin Field!(0x8010570E, ubyte, "numberOfRolls");
     mixin Field!(0x80097650, uint, "randomState");
     mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
@@ -102,6 +104,8 @@ union Data {
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
     mixin Field!(0x80036574, Instruction, "messageBoxLength");
     mixin Field!(0x800365A8, Instruction, "messageBoxChar");
+    mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
+    mixin Field!(0x8004ACE0, Instruction, "playSFX");
     mixin Field!(0x800F52C4, Instruction, "determineTeams");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
     mixin Field!(0x801057E0, Arr!(PlayerCard, 4), "playerCards");
@@ -333,6 +337,34 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 miniGameList[t].popFront();
             });
         }
+
+        if (config.enhancedTaunts) {
+            data.storeButtonPress.addr.onExec({
+                if (!gpr.v0) return;
+
+                SFX sfx;
+                switch (data.buttons[gpr.t0]) {
+                    case BUTTON.L:   sfx = SFX.TAUNT;               break;
+                    case BUTTON.D_R: sfx = SFX.BEING_CHOSEN;        break;
+                    case BUTTON.D_L: sfx = SFX.GETTING_AN_ITEM;     break;
+                    case BUTTON.D_D: sfx = SFX.WINNING_A_STAR;      break;
+                    case BUTTON.D_U: sfx = SFX.WINNING_A_MINI_GAME; break;
+                    case BUTTON.C_R: sfx = SFX.DESPAIR_1;           break;
+                    case BUTTON.C_L: sfx = SFX.DESPAIR_2;           break;
+                    case BUTTON.C_D: sfx = SFX.LOSING_A_MINI_GAME;  break;
+                    case BUTTON.C_U: sfx = SFX.LOSING_A_MINI_GAME;  break;
+                    default:                                        return;
+                }
+
+                auto playerIndex = players.countUntil!(p => p.data.flags && !p.isCPU && p.data.controller == gpr.t0);
+                if (playerIndex == -1) return;
+
+                data.playSFX.addr.jal({
+                    gpr.a0 = sfx;
+                    gpr.a1 = playerIndex;
+                });
+            });
+        }
     }
 }
 
@@ -542,6 +574,19 @@ enum BonusType {
     ITEM,
     BANK,
     GAMBLING
+}
+
+enum SFX {
+    WINNING_A_STAR       = 0x0262,
+    LOSING_A_MINI_GAME   = 0x026B,
+    GETTING_AN_ITEM      = 0x0274,
+    WINNING_A_BOARD_GAME = 0x027D,
+    DESPAIR_1            = 0x0286,
+    WINNING_A_MINI_GAME  = 0x028F,
+    DESPAIR_2            = 0x02AB,
+    BEING_CHOSEN         = 0x02B4,
+    TAUNT                = 0x02BD,
+    SUPERSTAR            = 0x02C6
 }
 
 MiniGameType type(MiniGame game) {

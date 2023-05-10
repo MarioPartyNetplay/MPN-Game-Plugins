@@ -22,10 +22,10 @@ class MarioParty2Config : MarioPartyConfig {
     bool carryThreeItems = true;
     bool randomBoardMiniGames = true;
     PlayerConfig[] players = [
-        new PlayerConfig(0),
-        new PlayerConfig(0),
         new PlayerConfig(1),
-        new PlayerConfig(1)
+        new PlayerConfig(1),
+        new PlayerConfig(2),
+        new PlayerConfig(2)
     ];
 }
 
