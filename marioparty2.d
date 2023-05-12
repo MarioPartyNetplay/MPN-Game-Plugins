@@ -75,7 +75,7 @@ union Memory {
     ubyte[0x400000] ram;
     mixin Field!(0x800FD2C0, Arr!(Player, 4), "players");
     mixin Field!(0x800FA63C, Scene, "currentScene");
-    mixin Field!(0x800F93AE, ushort, "turnLimit");
+    mixin Field!(0x800F93AE, ushort, "totalTurns");
     mixin Field!(0x800F93B0, ushort, "currentTurn");
     mixin Field!(0x800F93C6, ushort, "currentPlayerIndex");
     mixin Field!(0x800DF645, ubyte, "numberOfRolls");
@@ -93,6 +93,14 @@ union Memory {
 class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
     this(string name, string hash) {
         super(name, hash);
+    }
+
+    override bool lockTeams() const {
+        return false;
+    }
+
+    override bool disableTeams() const {
+        return false;
     }
 
     alias isBoardScene = typeof(super).isBoardScene;

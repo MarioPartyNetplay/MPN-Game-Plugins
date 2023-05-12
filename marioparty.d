@@ -57,6 +57,8 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
         return data.currentPlayerIndex < 4 ? players[data.currentPlayerIndex] : null;
     }
 
+    abstract bool lockTeams() const;
+    abstract bool disableTeams() const;
     abstract bool isBoardScene(Scene scene) const;
     abstract bool isScoreScene(Scene scene) const;
     bool isBoardScene() const { return isBoardScene(data.currentScene); }
@@ -110,16 +112,24 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             players.each!((p) {
                 p.data.coins.onWrite((ref ushort coins) {
                     if (!isScoreScene()) return;
-                    teammates(p).each!((t) {
-                        t.data.coins = coins;
-                        t.data.maxCoins = max(t.data.maxCoins, coins);
-                    });
+                    if (lockTeams()) {
+                        coins = p.data.coins;
+                    } if (!disableTeams()) {
+                        teammates(p).each!((t) {
+                            t.data.coins = coins;
+                            t.data.maxCoins = max(t.data.maxCoins, coins);
+                        });
+                    }
                 });
                 p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
                     if (!isScoreScene()) return;
-                    teammates(p).each!((t) {
-                        t.data.stars = stars;
-                    });
+                    if (lockTeams()) {
+                        stars = p.data.stars;
+                    } if (!disableTeams()) {
+                        teammates(p).each!((t) {
+                            t.data.stars = stars;
+                        });
+                    }
                 });
                 /*
                 p.data.color.onWrite((ref Color color) {
@@ -159,7 +169,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             }
             */
 
-            static if (is(typeof(data.playerCards)) &&is(typeof(data.determineTeams))) {
+            static if (is(typeof(data.playerCards)) && is(typeof(data.determineTeams))) {
                 data.determineTeams.addr.onExec({
                     if (!isBoardScene()) return;
 

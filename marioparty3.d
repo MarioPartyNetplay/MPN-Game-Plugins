@@ -73,6 +73,9 @@ union Data {
     mixin Field!(0x801088DC, Instruction, "loadBonusStat2b");
     mixin Field!(0x80108CC0, Instruction, "loadBonusStat3a");
     mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
+    mixin Field!(0x80101780, uint, "chancePlayer1");
+    mixin Field!(0x80101784, uint, "chancePlayer2");
+    mixin Field!(0x80109568, BowserEventType, "bowserEventType");
 }
 
 union Player {
@@ -142,6 +145,24 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
+    }
+
+    override bool lockTeams() const {
+        if (data.currentScene == Scene.CHANCE_TIME) {
+            if (data.chancePlayer1 < players.length && data.chancePlayer2 < players.length) {
+                return players[data.chancePlayer1].config.team
+                    == players[data.chancePlayer2].config.team;
+            }
+        }
+        return false;
+    }
+
+    override bool disableTeams() const {
+        if (data.currentScene == Scene.BOWSER_EVENT) {
+            return data.bowserEventType == BowserEventType.COIN_POTLUCK
+                || data.bowserEventType == BowserEventType.REVOLUTION;
+        }
+        return false;
     }
 
     alias isBoardScene = typeof(super).isBoardScene;
@@ -576,6 +597,20 @@ enum BonusType {
     ITEM,
     BANK,
     GAMBLING
+}
+
+enum BowserEventType : int {
+    UNKNOWN           = -1,
+    COINS_FOR_BOWSER  =  0,
+    COIN_POTLUCK      =  1,
+    SUIT_GIVEAWAY     =  2,
+    PHONE_GIVEAWAY    =  3,
+    CURSE             =  4,
+    REVERSE_CURSE     =  5,
+    SHUFFLE           =  6,
+    REVOLUTION        =  7,
+    BOWSER_RAN_AWAY_1 =  8,
+    BOWSER_RAN_AWAY_2 =  9
 }
 
 enum SFX {
