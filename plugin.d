@@ -394,6 +394,7 @@ extern (C) {
       ubyte* _memory,
       uint _memorySize) {
         try {
+            allocConsole();
             random.seed([hash(0), hash(1), hash(2), hash(3)]);
             window = hwnd;
             addAddress = _addAddress;

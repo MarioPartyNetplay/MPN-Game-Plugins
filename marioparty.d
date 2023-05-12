@@ -84,8 +84,6 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     override void onStart() {
         super.onStart();
 
-        allocConsole();
-
         data.currentScene.onWrite((ref Scene scene) {
             if (scene != data.currentScene) {
                 writeln("Scene: ", scene);
@@ -114,7 +112,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     if (!isScoreScene()) return;
                     teammates(p).each!((t) {
                         t.data.coins = coins;
-                        t.data.maxCoins = max(coins, t.data.coins);
+                        t.data.maxCoins = max(t.data.maxCoins, coins);
                     });
                 });
                 p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
@@ -221,7 +219,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             if (config.lastPlaceDoubleRoll) {
                 data.numberOfRolls.onRead((ref ubyte rolls) {
                     if (!isBoardScene()) return;
-                    if (isIn4thPlace(currentPlayer) && rolls < 2) {
+                    if (isInLastPlace(currentPlayer) && rolls < 2) {
                         rolls = 2;
                     }
                 });

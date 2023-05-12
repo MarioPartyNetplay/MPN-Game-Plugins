@@ -46,6 +46,7 @@ union Space {
 
 union Player {
     ubyte[0x38] _data;
+    mixin Field!(0x01, ubyte, "cpuDifficulty");
     mixin Field!(0x02, ubyte, "controller");
     mixin Field!(0x04, ubyte, "flags");
     mixin Field!(0x0A, ushort, "coins");
@@ -91,7 +92,7 @@ union Data {
     ubyte[0x400000] memory;
     mixin Field!(0x800D1108, Arr!(Player, 4), "players");
     mixin Field!(0x800CE200, Scene, "currentScene");
-    mixin Field!(0x800CD05A, ubyte, "turnLimit");
+    mixin Field!(0x800CD05A, ubyte, "totalTurns");
     mixin Field!(0x800CD05B, ubyte, "currentTurn");
     mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
     mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
@@ -136,6 +137,10 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
     this(string name, string hash) {
         super(name, hash);
+
+        if (config.replaceChanceSpaces) {
+            bonus = bonus.remove!(b => b == BonusType.CHANCE);
+        }
     }
 
     alias isBoardScene = typeof(super).isBoardScene;
@@ -217,6 +222,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     writeln("Bonus: ", bonus[0..3]);
                 }
             });
+            
             data.messageBoxLength.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
                 
@@ -245,6 +251,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (data.currentScene != Scene.FINISH_BOARD) return;
                 gpr.v0 = message[gpr.a0];
             });
+
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
                 gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
@@ -278,8 +285,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     gpr.v0 = Space.Type.GAME_GUY;
                 }
             });
-
-            bonus = bonus.filter!(b => b != BonusType.CHANCE).array;
         }
 
         /*
@@ -340,7 +345,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
         if (config.enhancedTaunts) {
             data.storeButtonPress.addr.onExec({
-                if (!gpr.v0) return;
+                if (gpr.v0 == 0 || data.totalTurns == 0) return;
 
                 SFX sfx;
                 switch (data.buttons[gpr.t0]) {
@@ -356,12 +361,12 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     default:                                        return;
                 }
 
-                auto playerIndex = players.countUntil!(p => p.data.flags && !p.isCPU && p.data.controller == gpr.t0);
-                if (playerIndex == -1) return;
+                auto p = players.find!(p => p.data.controller == gpr.t0);
+                if (p.empty || p.front.isCPU) return;
 
                 data.playSFX.addr.jal({
                     gpr.a0 = sfx;
-                    gpr.a1 = playerIndex;
+                    gpr.a1 = p.front.index;
                 });
             });
         }
