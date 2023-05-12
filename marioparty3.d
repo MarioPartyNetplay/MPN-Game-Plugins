@@ -23,6 +23,7 @@ class MarioParty3Config : MarioPartyConfig {
     bool replaceChanceSpaces = true;
     //bool moveInAnyDirection = true;
     bool enhancedTaunts = true;
+    bool reduceRepeatMiniGames = true;
     MiniGame[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(1),
@@ -42,6 +43,36 @@ union Space {
         STAR     = 0xE,
         GAME_GUY = 0xF
     }
+}
+
+union Data {
+    ubyte[0x400000] memory;
+    mixin Field!(0x800D1108, Arr!(Player, 4), "players");
+    mixin Field!(0x800CE200, Scene, "currentScene");
+    mixin Field!(0x800CD05A, ubyte, "totalTurns");
+    mixin Field!(0x800CD05B, ubyte, "currentTurn");
+    mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
+    mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
+    mixin Field!(0x8010570E, ubyte, "numberOfRolls");
+    mixin Field!(0x80097650, uint, "randomState");
+    mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
+    mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
+    mixin Field!(0x800FAB98, Instruction, "duelRoutine");
+    mixin Field!(0x800FB624, Instruction, "battleRoutine");
+    mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
+    mixin Field!(0x80036574, Instruction, "messageBoxLength");
+    mixin Field!(0x800365A8, Instruction, "messageBoxChar");
+    mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
+    mixin Field!(0x8004ACE0, Instruction, "playSFX");
+    mixin Field!(0x800F52C4, Instruction, "determineTeams");
+    mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
+    mixin Field!(0x801057E0, Arr!(PlayerCard, 4), "playerCards");
+    mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
+    mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
+    mixin Field!(0x80108898, Instruction, "loadBonusStat2a");
+    mixin Field!(0x801088DC, Instruction, "loadBonusStat2b");
+    mixin Field!(0x80108CC0, Instruction, "loadBonusStat3a");
+    mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
 }
 
 union Player {
@@ -86,36 +117,6 @@ union Player {
 union PlayerCard {
     ubyte[0x6C] _data;
     mixin Field!(0x04, ubyte, "color");
-}
-
-union Data {
-    ubyte[0x400000] memory;
-    mixin Field!(0x800D1108, Arr!(Player, 4), "players");
-    mixin Field!(0x800CE200, Scene, "currentScene");
-    mixin Field!(0x800CD05A, ubyte, "totalTurns");
-    mixin Field!(0x800CD05B, ubyte, "currentTurn");
-    mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
-    mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
-    mixin Field!(0x8010570E, ubyte, "numberOfRolls");
-    mixin Field!(0x80097650, uint, "randomState");
-    mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
-    mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
-    mixin Field!(0x800FAB98, Instruction, "duelRoutine");
-    mixin Field!(0x800FB624, Instruction, "battleRoutine");
-    mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
-    mixin Field!(0x80036574, Instruction, "messageBoxLength");
-    mixin Field!(0x800365A8, Instruction, "messageBoxChar");
-    mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
-    mixin Field!(0x8004ACE0, Instruction, "playSFX");
-    mixin Field!(0x800F52C4, Instruction, "determineTeams");
-    mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
-    mixin Field!(0x801057E0, Arr!(PlayerCard, 4), "playerCards");
-    mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
-    mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
-    mixin Field!(0x80108898, Instruction, "loadBonusStat2a");
-    mixin Field!(0x801088DC, Instruction, "loadBonusStat2b");
-    mixin Field!(0x80108CC0, Instruction, "loadBonusStat3a");
-    mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
 }
 
 immutable BONUS_TEXT = [
@@ -314,9 +315,9 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
         */
 
-        if (config.blockedMiniGames.length > 0) {
-            MiniGame[][MiniGameType] miniGameList;
-            MiniGame[uint][MiniGameType] miniGameScreen;
+        if (config.reduceRepeatMiniGames || config.blockedMiniGames.length > 0) {
+            MiniGame[][MiniGameType] queue;
+            // Populate mini-game roulette
             0x800DFE90.onExec({
                 if (!isBoardScene()) return;
                 0x800DFED4.val!Instruction = NOP;
@@ -324,22 +325,18 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 0x800DFF64.val!Instruction = NOP;
                 0x800DFF78.val!Instruction = NOP;
                 auto t = (cast(MiniGame)gpr.v0).type;
-                miniGameList.require(t, [EnumMembers!MiniGame].filter!(g => g.type == t)
-                                                              .filter!(g => !config.blockedMiniGames.canFind(g))
-                                                              .array.randomShuffle(random));
-                if (gpr.s0 !in miniGameScreen.require(t)) {
-                    miniGameScreen[t][gpr.s0] = miniGameList[t].front;
-                    miniGameList[t].popFront();
-                }
-                gpr.v0 = miniGameScreen[t][gpr.s0];
+                // Initialize mini-game queue
+                queue.require(t, [EnumMembers!MiniGame].filter!(g => g.type == t)
+                                                       .filter!(g => !config.blockedMiniGames.canFind(g))
+                                                       .array.randomShuffle(random));
+                gpr.v0 = queue[t][gpr.s0];
             });
+            // Roulette result
             0x800DF468.onExec({
                 if (!isBoardScene()) return;
-                auto t = data.miniGameSelection[gpr.v1].type;
-                miniGameList[t] ~= miniGameScreen[t][gpr.v1];
-                miniGameList[t].swapAt(0, uniform(0, miniGameList[t].length / 3, random));
-                miniGameScreen[t][gpr.v1] = miniGameList[t].front;
-                miniGameList[t].popFront();
+                auto g = data.miniGameSelection[gpr.v1];                  // Get chosen mini-game
+                queue[g.type] = (queue[g.type].remove!(e => e == g) ~ g); // Move chosen mini-game to end of queue
+                queue[g.type][0..$/2].randomShuffle(random);              // Shuffle first half of queue
             });
         }
 
