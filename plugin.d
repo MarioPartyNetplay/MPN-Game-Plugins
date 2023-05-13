@@ -11,6 +11,9 @@ import std.file;
 import std.conv;
 import std.traits;
 import std.stdio;
+import std.typecons;
+import std.math;
+import std.bitmanip;
 
 alias uint Address;
 alias uint Instruction;
@@ -20,12 +23,6 @@ enum Instruction NOP = 0;
 ulong flip(ulong value) pure nothrow @nogc @safe {
     import core.bitop;
     return ror(value, 32);
-}
-
-ulong hash(ulong z) @safe nothrow @nogc pure {
-    z ^= z >> 30; z *= 0xbf58476d1ce4e5b9;
-    z ^= z >> 27; z *= 0x94d049bb133111eb;
-    z ^= z >> 31; return z;
 }
 
 size_t swapAddrEndian(T)(size_t address) pure nothrow @nogc @safe {
@@ -168,6 +165,50 @@ T fromJSON(T)(const JSONValue obj, T result = null) if (is(T == class)) {
     }
 }
 
+struct PCG {
+    import core.bitop;
+
+    enum isUniformRandom = true;
+    enum hasFixedRange = true;
+    enum min = uint.min;
+    enum max = uint.max;
+    enum empty = false;
+    enum a = 0x5851f42d4c957f2d;
+    enum c = 0x14057b7ef767814f;
+
+    ulong state;
+
+    this(ulong s) @safe nothrow @nogc { seed(s); }
+    void seed(ulong s) @safe nothrow @nogc { state = s; popFront(); }
+    auto save() const @safe nothrow @nogc { return this; }
+    @property uint front() const @safe nothrow @nogc { return ror(cast(uint)(((state >> 18) ^ state) >> 27), state >> 59); }
+    void popFront() @safe nothrow @nogc { state = state * a + c; }
+    uint next() @safe nothrow @nogc { uint f = front; popFront(); return f; }
+}
+
+struct SplitMix64 {
+    enum isUniformRandom = true;
+    enum hasFixedRange = true;
+    enum min = ulong.min;
+    enum max = ulong.max;
+    enum empty = false;
+
+    ulong state;
+
+    this(ulong s) @safe nothrow @nogc { seed(s); }
+    void seed(ulong s) @safe nothrow @nogc { state = s; popFront(); }
+    auto save() const @safe nothrow @nogc { return this; }
+    @property ulong front() const @safe nothrow @nogc { return hash(state); }
+    void popFront() @safe nothrow @nogc { state += 0x9e3779b97f4a7c15; }
+    ulong next() @safe nothrow @nogc { ulong f = front; popFront(); return f; }
+
+    static ulong hash(ulong z) @safe nothrow @nogc pure {
+        z ^= z >> 30; z *= 0xbf58476d1ce4e5b9;
+        z ^= z >> 27; z *= 0x94d049bb133111eb;
+        z ^= z >> 31; return z;
+    }
+}
+
 struct Xoshiro256pp {
     import core.bitop;
 
@@ -179,7 +220,12 @@ struct Xoshiro256pp {
 
     ulong[4] state;
     
+    this(ulong s) @safe nothrow @nogc { seed(s); }
     this(ulong[4] s) @safe nothrow @nogc { seed(s); }
+    void seed(ulong s) @safe nothrow @nogc {
+        auto r = SplitMix64(s);
+        seed([r.next, r.next, r.next, r.next]);
+    }
     void seed(ulong[4] s) @safe nothrow @nogc { state = s; }
     auto save() const @safe nothrow @nogc { return this; }
     @property ulong front() const @safe nothrow @nogc { return rol(state[0] + state[3], 23) + state[0]; }
@@ -192,6 +238,7 @@ struct Xoshiro256pp {
         state[2] ^= temp;
         state[3] = rol(state[3], 45);
     }
+    ulong next() @safe nothrow @nogc { ulong f = front; popFront(); return f; }
 }
 
 double normal(Random)(ref Random r) @safe {
@@ -200,6 +247,86 @@ double normal(Random)(ref Random r) @safe {
     double u = uniform!"(]"(0.0, 1.0, r);
     double v = uniform!"(]"(0.0, 1.0, r);
     return sqrt(-2 * log(u)) * cos(2 * PI * v);
+}
+
+Range frontDistanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
+    if (r.length <= 1 || d == 0) return r;
+
+    foreach (i, ref e; r[0..$-1]) {
+        swap(e, r[i..min($, i+d+1)].choice(gen));
+    }
+
+    return r;
+}
+
+Range distanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
+    if (r.length <= 1 || d == 0) return r;
+
+    void dS(Range)(Range r) {
+        union Flag {
+            ubyte value;
+            mixin(bitfields!(
+                bool, "src", 1,
+                bool, "dst", 1,
+                uint, "",    6
+            ));
+        }
+
+        auto w = min(d+1, r.length);
+        auto copy = cycle(r[0..w].array);
+        auto flag = cycle(new Flag[w]);
+
+        for (size_t i = 0, j; i < r.length; i++) {
+            if (!flag[i].src) {
+                do { j = i + uniform(0, min(r.length-i, w), gen); } while (flag[j].dst);
+                r[j] = copy[i];
+                flag[j].dst = true;
+            }
+
+            if (!flag[i].dst) {
+                do { j = i + uniform(1, min(r.length-i, w), gen); } while (flag[j].src);
+                r[i] = copy[j];
+                flag[j].src = true;
+            }
+
+            if (i+w < r.length) {
+                copy[i+w] = r[i+w];
+                flag[i+w].value = 0;
+            }
+        }
+    }
+
+    if (uniform(0, 2, gen)) {
+        dS(r);
+    } else {
+        dS(retro(r));
+    }
+    
+    return r;
+}
+
+Range distanceShuffleUniform(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
+    if (r.length <= 1 || d == 0) return r;
+
+    auto p = iota(r.length).array; // Positions
+    auto q = iota(r.length).array; // Inverse Positions
+
+    void s(size_t i, size_t j) {
+        swap(r[i], r[j]);
+        swap(p[i], p[j]);
+        swap(q[p[i]], q[p[j]]);
+    }
+    
+    for (auto i = 0; i < r.length-1; i++) {
+        auto j = uniform(i, min(i+d+1, r.length), gen);
+        if (i >= d && q[i-d] >= i && q[i-d] != j) { // Dead End
+            while (--i >= 0) s(i, q[i]);            // Reset
+        } else {
+            s(i, j);
+        }
+    }
+
+    return r;
 }
 
 union Register(T) if (T.sizeof == 4) {
@@ -395,7 +522,7 @@ extern (C) {
       uint _memorySize) {
         try {
             allocConsole();
-            random.seed([hash(0), hash(1), hash(2), hash(3)]);
+            random.seed(0);
             window = hwnd;
             addAddress = _addAddress;
             pc = _pc;
@@ -448,7 +575,7 @@ extern (C) {
 
         foreach (i; 0..4) {
             if (input[i] && input[i] != previous[i]) {
-                random.state[i] ^= hash((frame << 32) | input[i]);
+                random.state[i] ^= SplitMix64.hash((frame << 32) | input[i]);
             }
             previous[i] = input[i];
         }

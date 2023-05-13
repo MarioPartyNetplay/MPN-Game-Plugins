@@ -9,6 +9,10 @@ import std.conv;
 import std.traits;
 import std.stdio;
 import std.string;
+import std.file;
+import std.json;
+
+immutable SHUFFLE_TOKEN = "(SHUFFLE)";
 
 class PlayerConfig {
     int team;
@@ -23,14 +27,18 @@ class MarioParty3Config : MarioPartyConfig {
     bool replaceChanceSpaces = true;
     //bool moveInAnyDirection = true;
     bool enhancedTaunts = true;
-    bool reduceRepeatMiniGames = true;
-    MiniGame[] blockedMiniGames;
+    bool preventRepeatMiniGames = true;
+    string[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(1),
         new PlayerConfig(1),
         new PlayerConfig(2),
         new PlayerConfig(2)
     ];
+}
+
+class StateConfig {
+    string[][string] miniGameQueue;
 }
 
 union Space {
@@ -65,7 +73,7 @@ union Data {
     mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
     mixin Field!(0x8004ACE0, Instruction, "playSFX");
     mixin Field!(0x800F52C4, Instruction, "determineTeams");
-    mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameSelection");
+    mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameRoulette");
     mixin Field!(0x801057E0, Arr!(PlayerCard, 4), "playerCards");
     mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
     mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
@@ -137,14 +145,30 @@ immutable BONUS_TEXT = [
 ];
 
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
+    StateConfig state;
+
     BonusType[] bonus = [EnumMembers!BonusType];
 
     this(string name, string hash) {
         super(name, hash);
 
+        loadState();
+
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
+    }
+
+    void loadState() {
+        try {
+            state = readText(dllPath ~ romName ~ "-State.json").parseJSON().fromJSON!StateConfig();
+        } catch (FileException e) {
+            state = new StateConfig;
+        }
+    }
+
+    void saveState() {
+        std.file.write(dllPath ~ romName ~ "-State.json", state.toJSON().toPrettyString());
     }
 
     override bool lockTeams() const {
@@ -336,8 +360,17 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
         */
 
-        if (config.reduceRepeatMiniGames || config.blockedMiniGames.length > 0) {
-            MiniGame[][MiniGameType] queue;
+        if (config.preventRepeatMiniGames || config.blockedMiniGames.length > 0) {
+            data.currentTurn.onWrite((ref ubyte turn) {
+                if (data.currentScene != Scene.TRANSITION) return;
+                if (turn != 1) return;
+                foreach (ref queue; state.miniGameQueue.byValue()) {
+                    queue = queue.remove!(e => e == SHUFFLE_TOKEN);
+                    queue.distanceShuffle((queue.length-1)/2, random);
+                    queue ~= SHUFFLE_TOKEN;
+                }
+                saveState();
+            });
             // Populate mini-game roulette
             0x800DFE90.onExec({
                 if (!isBoardScene()) return;
@@ -345,20 +378,27 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 0x800DFF40.val!Instruction = NOP;
                 0x800DFF64.val!Instruction = NOP;
                 0x800DFF78.val!Instruction = NOP;
-                auto t = (cast(MiniGame)gpr.v0).type;
-                // Initialize mini-game queue
-                queue.require(t, [EnumMembers!MiniGame].filter!(g => g.type == t)
-                                                       .filter!(g => !config.blockedMiniGames.canFind(g))
-                                                       .array.randomShuffle(random));
-                gpr.v0 = queue[t][gpr.s0];
+                if (gpr.s0 == 0) {
+                    auto type = (cast(MiniGame)gpr.v0).type;
+                    auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
+                    auto queue = state.miniGameQueue.require(type.to!string, list.map!(g => g.to!string).filter!(g => !config.blockedMiniGames.canFind(g)).array.randomShuffle(random) ~ SHUFFLE_TOKEN);
+                    if (queue.front == SHUFFLE_TOKEN) {
+                        queue = queue[1..$];
+                        queue.distanceShuffle((queue.length-1)/2, random);
+                        queue ~= SHUFFLE_TOKEN;
+                    }
+                    auto game = queue.front.to!MiniGame;
+                    auto rouletteLength = *Ptr!ubyte(0x80100E18 + gpr.s2);
+                    auto roulette = (game ~ list.filter!(g => g != game).array.randomShuffle(random)[0..rouletteLength-1]).randomShuffle(random);
+                    roulette.each!((i, e) => data.miniGameRoulette[i] = e);
+                    0x800DF120.onExecOnce({ gpr.v0 = roulette.countUntil(game); });
+                    state.miniGameQueue[type.to!string] = (queue[1..$] ~ queue.front);
+                    saveState();
+                }
+                gpr.v0 = data.miniGameRoulette[gpr.s0];
             });
-            // Roulette result
-            0x800DF468.onExec({
-                if (!isBoardScene()) return;
-                auto g = data.miniGameSelection[gpr.v1];                  // Get chosen mini-game
-                queue[g.type] = (queue[g.type].remove!(e => e == g) ~ g); // Move chosen mini-game to end of queue
-                queue[g.type][0..$/2].randomShuffle(random);              // Shuffle first half of queue
-            });
+            // Prevent the mini-game roulette from jumping backward
+            0x800DF3C0.onExec({ if (isBoardScene()) gpr.v0 = 1; });
         }
 
         if (config.enhancedTaunts) {
@@ -461,7 +501,7 @@ enum Scene : uint {
     FOWL_PLAY                =  58,
     WINNERS_WHEEL            =  59,
     HEY_BATTER_BATTER        =  60,
-    BOBBLING_BOW_LOONS       =  61,
+    BOBBING_BOW_LOONS        =  61,
     DORRIE_DIP               =  62,
     SWINGING_WITH_SHARKS     =  63,
     SWING_N_SWIPE            =  64,
@@ -560,7 +600,7 @@ enum MiniGame : ubyte {
     FOWL_PLAY                =  58,
     WINNERS_WHEEL            =  59,
     HEY_BATTER_BATTER        =  60,
-    BOBBLING_BOW_LOONS       =  61,
+    BOBBING_BOW_LOONS        =  61,
     DORRIE_DIP               =  62,
     SWINGING_WITH_SHARKS     =  63,
     SWING_N_SWIPE            =  64,
