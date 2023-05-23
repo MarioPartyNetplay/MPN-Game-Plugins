@@ -68,8 +68,8 @@ union Data {
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
     mixin Field!(0x800FB624, Instruction, "battleRoutine");
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
-    mixin Field!(0x80036574, Instruction, "messageBoxLength");
-    mixin Field!(0x800365A8, Instruction, "messageBoxChar");
+    mixin Field!(0x80036574, Instruction, "textLength");
+    mixin Field!(0x800365A8, Instruction, "textChar");
     mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
     mixin Field!(0x8004ACE0, Instruction, "playSFX");
     mixin Field!(0x800F52C4, Instruction, "determineTeams");
@@ -146,6 +146,7 @@ immutable BONUS_TEXT = [
 
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     StateConfig state;
+    string gameText;
 
     BonusType[] bonus = [EnumMembers!BonusType];
 
@@ -225,6 +226,36 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     override void onStart() {
         super.onStart();
 
+        data.textLength.addr.onExec({
+            auto c = Ptr!char(gpr.s0 + 2);
+            gameText = "";
+            foreach (i; 0..gpr.s1) {
+                gameText ~= *(c++);
+            }
+
+            if (gameText == "\x0BSaving\x85\x85\x85\x00\x00" || gameText == "\x0BFinished saving\x85\x00\x00") {
+                gameText = "\x0BTurn" ~ Char.COLON ~ "  \x07" ~ data.currentTurn.to!string ~ " " ~ Char.SLASH ~ " " ~ data.totalTurns.to!string ~ "\x19\x00\x00";
+            }
+
+            if (config.randomBonus && data.currentScene == Scene.FINISH_BOARD) {
+                gameText = gameText.replace("one\nstar", "one star")
+                                   .replace("\x02\x0F Mini=Game Star\x16\x19", " \x02\x0FMini=Game Star\x16\x19")
+                                   .replace("\x02\x0FMini=Game Star\x16 \x19", "\x02\x0FMini=Game Star\x16\x19 ");
+
+                foreach (b; EnumMembers!BonusType[0..3]) {
+                    auto bt = BONUS_TEXT[b].enumerate.filter!(t => gameText.canFind(t.value));
+                    if (bt.empty) continue;
+                    foreach(t; bt) {
+                        gameText = gameText.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
+                    }
+                    break;
+                }
+            }
+            
+            gpr.s1 = cast(ushort)gameText.length;
+        });
+        data.textChar.addr.onExec({ gpr.v0 = gameText[gpr.a0]; });
+
         if (config.teams) {
             data.duelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
@@ -260,44 +291,11 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
 
         if (config.randomBonus) {
-            string message;
-
             data.currentScene.onWrite((ref Scene scene) {
-                if (scene == Scene.FINISH_BOARD) {
-                    bonus.randomShuffle(random);
-                    writeln("Bonus: ", bonus[0..3]);
-                }
+                if (scene != Scene.FINISH_BOARD) return;
+                bonus.randomShuffle(random);
+                writeln("Bonus: ", bonus[0..3]);
             });
-            
-            data.messageBoxLength.addr.onExec({
-                if (data.currentScene != Scene.FINISH_BOARD) return;
-                
-                auto c = Ptr!char(gpr.s0 + 2);
-                message = "";
-                foreach (i; 0..gpr.s1) {
-                    message ~= *(c++);
-                }
-
-                message = message.replace("one\nstar", "one star")
-                                 .replace("\x02\x0F Mini=Game Star\x16\x19", " \x02\x0FMini=Game Star\x16\x19")
-                                 .replace("\x02\x0FMini=Game Star\x16 \x19", "\x02\x0FMini=Game Star\x16\x19 ");
-
-                foreach (b; EnumMembers!BonusType[0..3]) {
-                    auto text = BONUS_TEXT[b].enumerate.filter!(t => message.canFind(t.value));
-                    if (text.empty) continue;
-                    foreach(t; text) {
-                        message = message.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
-                    }
-                    break;
-                }
-                
-                gpr.s1 = cast(ushort)message.length;
-            });
-            data.messageBoxChar.addr.onExec({
-                if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v0 = message[gpr.a0];
-            });
-
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
                 gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
@@ -433,6 +431,11 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
 shared static this() {
     pluginFactory = (name, hash) => new MarioParty3(name, hash);
+}
+
+enum Char : ubyte {
+    SLASH = '\x5F',
+    COLON = '\x7B'
 }
 
 enum Item : byte {
