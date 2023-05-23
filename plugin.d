@@ -573,11 +573,13 @@ extern (C) {
             catch (Exception e) { handleException(e); }
         }
 
-        foreach (i; 0..4) {
-            if (input[i] && input[i] != previous[i]) {
-                random.state[i] ^= SplitMix64.hash((frame << 32) | input[i]);
+        foreach (port; 0..4) {
+            if (input[port] && input[port] != previous[port]) {
+                // Choose a random bit to flip in the state of the RNG by hashing the input, port, and frame
+                ubyte bit = SplitMix64.hash((frame << 34) | (cast(ulong)port << 32) | input[port]) >> 56;
+                random.state[bit/64] ^= 1UL << (bit%64);
             }
-            previous[i] = input[i];
+            previous[port] = input[port];
         }
 
         random.popFront();
