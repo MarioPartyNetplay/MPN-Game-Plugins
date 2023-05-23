@@ -325,7 +325,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         if (config.randomBonus) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINISH_BOARD) return;
-                bonus.randomShuffle(random);
+                bonus.partialShuffle(3, random);
                 writeln("Bonus: ", bonus[0..3]);
             });
             data.loadBonusStat1a.addr.onExec({
@@ -411,16 +411,18 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (gpr.s0 == 0) {
                     auto type = (cast(MiniGame)gpr.v0).type;
                     auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
-                    auto queue = state.miniGameQueue.require(type.to!string, list.map!(g => g.to!string).filter!(g => !config.blockedMiniGames.canFind(g)).array.randomShuffle(random) ~ SHUFFLE_TOKEN);
+                    auto queue = state.miniGameQueue.require(type.to!string, list.map!(g => g.to!string)
+                                                                                 .filter!(g => !config.blockedMiniGames.canFind(g))
+                                                                                 .array.randomShuffle(random) ~ SHUFFLE_TOKEN);
                     if (queue.front == SHUFFLE_TOKEN) {
                         queue = queue[1..$];
                         queue.distanceShuffle((queue.length-1)/2, random);
                         queue ~= SHUFFLE_TOKEN;
                     }
                     auto game = queue.front.to!MiniGame;
-                    auto rouletteLength = *Ptr!ubyte(0x80100E18 + gpr.s2);
-                    auto roulette = (game ~ list.filter!(g => g != game).array.randomShuffle(random)[0..rouletteLength-1]).randomShuffle(random);
-                    roulette.each!((i, e) => data.miniGameRoulette[i] = e);
+                    auto altCount = *Ptr!ubyte(0x80100E18 + gpr.s2) - 1;
+                    auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
+                    roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x800DF120.onExecOnce({ gpr.v0 = roulette.countUntil(game); });
                     state.miniGameQueue[type.to!string] = (queue[1..$] ~ queue.front);
                     saveState();
