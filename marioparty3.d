@@ -24,6 +24,7 @@ class PlayerConfig {
 
 class MarioParty3Config : MarioPartyConfig {
     bool randomBonus = true;
+    string[string] bonuses;
     bool replaceChanceSpaces = true;
     //bool moveInAnyDirection = true;
     bool enhancedTaunts = true;
@@ -35,6 +36,22 @@ class MarioParty3Config : MarioPartyConfig {
         new PlayerConfig(2),
         new PlayerConfig(2)
     ];
+
+    this() {
+        bonuses = [
+            BonusType.MINI_GAME.to!string: "Mini=Game",
+            BonusType.COIN.to!string: "Coin",
+            BonusType.HAPPENING.to!string: "Happening",
+            BonusType.RED.to!string: "Unlucky",
+            BonusType.BLUE.to!string: "Blue",
+            BonusType.CHANCE.to!string: "Chance",
+            BonusType.BOWSER.to!string: "Bowser",
+            BonusType.BATTLE.to!string: "Battle",
+            BonusType.ITEM.to!string: "Item",
+            BonusType.BANK.to!string: "Banking",
+            BonusType.GAME_GUY.to!string: "Gambling"
+        ];
+    }
 }
 
 class StateConfig {
@@ -113,14 +130,14 @@ union Player {
             case BonusType.MINI_GAME: return miniGameCoins;
             case BonusType.COIN:      return maxCoins;
             case BonusType.HAPPENING: return happeningSpaces;
-            case BonusType.UNLUCKY:   return redSpaces;
+            case BonusType.RED:       return redSpaces;
             case BonusType.BLUE:      return blueSpaces;
             case BonusType.CHANCE:    return chanceSpaces;
             case BonusType.BOWSER:    return bowserSpaces;
             case BonusType.BATTLE:    return battleSpaces;
             case BonusType.ITEM:      return itemSpaces;
             case BonusType.BANK:      return bankSpaces;
-            case BonusType.GAMBLING:  return gameGuySpaces;
+            case BonusType.GAME_GUY:  return gameGuySpaces;
         }
     }
 }
@@ -133,28 +150,32 @@ union PlayerCard {
 immutable BONUS_TEXT = [
     ["\x02\x0FMini=Game Star\x16\x19", "\x02\x0FMini=Game Stars\x16\x19", "has won the most coins\nin Mini=Games"],
     ["\x07\x0FCoin Star\x16\x19",      "\x07\x0FCoin Stars\x16\x19",      "had the most\ncoins at any one time\nduring the game"],
-    ["\x05\x0FHappening Star\x16\x19", "\x05\x0FHappening Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"],
-    ["\x03\x0FUnlucky Star\x16\x19",   "\x03\x0FUnlucky Stars\x16\x19",   "landed on the most\n\x03\x0FRed Spaces\x16\x19"],
-    ["\x02\x0FBlue Star\x16\x19",      "\x02\x0FBlue Stars\x16\x19",      "landed on the most\n\x02\x0FBlue Spaces\x16\x19"],
-    ["\x05\x0FChance Star\x16\x19",    "\x05\x0FChance Stars\x16\x19",    "landed on the most\n\x05\x0F\xC2 Spaces\x16\x19"],
-    ["\x03\x0FBowser Star\x16\x19",    "\x03\x0FBowser Stars\x16\x19",    "landed on the most\n\x03\x0FBowser Spaces\x16\x19"],
-    ["\x05\x0FBattle Star\x16\x19",    "\x05\x0FBattle Stars\x16\x19",    "landed on the most\n\x05\x0FBattle Spaces\x16\x19"],
-    ["\x05\x0FItem Star\x16\x19",      "\x05\x0FItem Stars\x16\x19",      "landed on the most\n\x05\x0FItem Spaces\x16\x19"],
-    ["\x05\x0FBanking Star\x16\x19",   "\x05\x0FBanking Stars\x16\x19",   "landed on the most\n\x05\x0FBank Spaces\x16\x19"],
-    ["\x05\x0FGambling Star\x16\x19",  "\x05\x0FGambling Stars\x16\x19",  "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
+    ["\x05\x0FHappening Star\x16\x19", "\x05\x0FHappening Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"]
+];
+
+immutable BONUS_TEXT_REPLACEMENT = [
+    ["\x02\x0F$NAME Star\x16\x19", "\x02\x0F$NAME Stars\x16\x19", "has won the most coins\nin Mini=Games"],
+    ["\x07\x0F$NAME Star\x16\x19", "\x07\x0F$NAME Stars\x16\x19", "had the most\ncoins at any one time\nduring the game"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"],
+    ["\x03\x0F$NAME Star\x16\x19", "\x03\x0F$NAME Stars\x16\x19", "landed on the most\n\x03\x0FRed Spaces\x16\x19"],
+    ["\x02\x0F$NAME Star\x16\x19", "\x02\x0F$NAME Stars\x16\x19", "landed on the most\n\x02\x0FBlue Spaces\x16\x19"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0F\xC2 Spaces\x16\x19"],
+    ["\x03\x0F$NAME Star\x16\x19", "\x03\x0F$NAME Stars\x16\x19", "landed on the most\n\x03\x0FBowser Spaces\x16\x19"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FBattle Spaces\x16\x19"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FItem Spaces\x16\x19"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FBank Spaces\x16\x19"],
+    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
 ];
 
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     StateConfig state;
     string gameText;
-
-    BonusType[] bonus = [EnumMembers!BonusType];
+    BonusType[] bonus;
 
     this(string name, string hash) {
         super(name, hash);
 
-        loadState();
-
+        bonus = config.bonuses.keys().map!(k => k.to!BonusType).array;
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
@@ -170,6 +191,16 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
     void saveState() {
         std.file.write(dllPath ~ romName ~ "-State.json", state.toJSON().toPrettyString());
+    }
+
+    override void loadConfig() {
+        super.loadConfig();
+        loadState();
+    }
+
+    override void saveConfig() {
+        super.saveConfig();
+        saveState();
     }
 
     override bool lockTeams() const {
@@ -242,13 +273,14 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                                    .replace("\x02\x0F Mini=Game Star\x16\x19", " \x02\x0FMini=Game Star\x16\x19")
                                    .replace("\x02\x0FMini=Game Star\x16 \x19", "\x02\x0FMini=Game Star\x16\x19 ");
 
-                foreach (b; EnumMembers!BonusType[0..3]) {
-                    auto bt = BONUS_TEXT[b].enumerate.filter!(t => gameText.canFind(t.value));
-                    if (bt.empty) continue;
-                    foreach(t; bt) {
-                        gameText = gameText.replace(t.value, BONUS_TEXT[bonus[b]][t.index]);
+                foreach (i, ref bt; BONUS_TEXT) {
+                    if (bt.any!(t => gameText.canFind(t))) {
+                        foreach (j, ref t; bt) {
+                            gameText = gameText.replace(t, BONUS_TEXT_REPLACEMENT[bonus[i]][j])
+                                               .replace("$NAME", config.bonuses[bonus[i].to!string]);
+                        }
+                        break;
                     }
-                    break;
                 }
             }
             
@@ -632,14 +664,14 @@ enum BonusType {
     MINI_GAME,
     COIN,
     HAPPENING,
-    UNLUCKY,
+    RED,
     BLUE,
     CHANCE,
     BOWSER,
     BATTLE,
     ITEM,
     BANK,
-    GAMBLING
+    GAME_GUY
 }
 
 enum BowserEventType : int {
