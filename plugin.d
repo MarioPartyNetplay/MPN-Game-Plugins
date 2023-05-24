@@ -244,8 +244,8 @@ struct Xoshiro256pp {
 double normal(Random)(ref Random r) @safe {
     import std.math;
 
-    double u = uniform!"(]"(0.0, 1.0, r);
-    double v = uniform!"(]"(0.0, 1.0, r);
+    double u = r.uniform01();
+    double v = r.uniform01();
     return sqrt(-2 * log(u)) * cos(2 * PI * v);
 }
 
@@ -263,35 +263,30 @@ Range distanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if
     if (r.length <= 1 || d == 0) return r;
 
     void dS(Range)(Range r) {
-        union Flag {
-            ubyte value;
-            mixin(bitfields!(
-                bool, "src", 1,
-                bool, "dst", 1,
-                uint, "",    6
-            ));
-        }
-
         auto w = min(d+1, r.length);
-        auto copy = cycle(r[0..w].array);
-        auto flag = cycle(new Flag[w]);
+        auto cpy = cycle(r[0..w].array);
+        auto src = cycle(new bool[w]);
+        auto dst = cycle(new bool[w]);
 
-        for (size_t i = 0, j; i < r.length; i++) {
-            if (!flag[i].src) {
-                do { j = i + uniform(0, min(r.length-i, w), gen); } while (flag[j].dst);
-                r[j] = copy[i];
-                flag[j].dst = true;
+        foreach (size_t i; iota(r.length)) {
+            size_t j;
+
+            if (!src[i]) {
+                do { j = i + uniform(0, min(r.length-i, w), gen); } while (dst[j]);
+                r[j] = cpy[i];
+                dst[j] = true;
             }
 
-            if (!flag[i].dst) {
-                do { j = i + uniform(1, min(r.length-i, w), gen); } while (flag[j].src);
-                r[i] = copy[j];
-                flag[j].src = true;
+            if (!dst[i]) {
+                do { j = i + uniform(1, min(r.length-i, w), gen); } while (src[j]);
+                r[i] = cpy[j];
+                src[j] = true;
             }
 
             if (i+w < r.length) {
-                copy[i+w] = r[i+w];
-                flag[i+w].value = 0;
+                cpy[i+w] = r[i+w];
+                src[i+w] = false;
+                dst[i+w] = false;
             }
         }
     }
