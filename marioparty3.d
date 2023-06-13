@@ -29,6 +29,7 @@ class MarioParty3Config : MarioPartyConfig {
     //bool moveInAnyDirection = true;
     bool enhancedTaunts = true;
     bool preventRepeatMiniGames = true;
+    bool randomChanceOrder = false;
     string[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(1),
@@ -101,6 +102,7 @@ union Data {
     mixin Field!(0x80101780, uint, "chancePlayer1");
     mixin Field!(0x80101784, uint, "chancePlayer2");
     mixin Field!(0x80109568, BowserEventType, "bowserEventType");
+    mixin Field!(0x8010FE64, Arr!(ubyte, 3), "chanceOrder");
 }
 
 union Player {
@@ -396,7 +398,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (turn != 1) return;
                 foreach (ref queue; state.miniGameQueue.byValue()) {
                     queue = queue.remove!(e => e == SHUFFLE_TOKEN);
-                    queue.distanceShuffle((queue.length-1)/2, random);
+                    queue.distanceShuffleUniform((queue.length-1)/2, random);
                     queue ~= SHUFFLE_TOKEN;
                 }
                 saveState();
@@ -416,7 +418,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                                                                                  .array.randomShuffle(random) ~ SHUFFLE_TOKEN);
                     if (queue.front == SHUFFLE_TOKEN) {
                         queue = queue[1..$];
-                        queue.distanceShuffle((queue.length-1)/2, random);
+                        queue.distanceShuffleUniform((queue.length-1)/2, random);
                         queue ~= SHUFFLE_TOKEN;
                     }
                     auto game = queue.front.to!MiniGame;
@@ -458,6 +460,13 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     gpr.a0 = sfx;
                     gpr.a1 = p.front.index;
                 });
+            });
+        }
+
+        if (config.randomChanceOrder) {
+            0x80105B58.onExec({
+                if (data.currentScene != Scene.CHANCE_TIME) return;
+                [0, 1, 2].randomShuffle(random).each!((i, j) => data.chanceOrder[i] = cast(ubyte)j);
             });
         }
     }
