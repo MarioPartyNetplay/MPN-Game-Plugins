@@ -266,8 +266,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 gameText ~= *(c++);
             }
 
-            if (gameText == "\x0BSaving\x85\x85\x85\x00\x00" || gameText == "\x0BFinished saving\x85\x00\x00") {
-                gameText = "\x0BTurn" ~ Char.COLON ~ "  \x07" ~ data.currentTurn.to!string ~ " " ~ Char.SLASH ~ " " ~ data.totalTurns.to!string ~ "\x19\x00\x00";
+            if (gameText == "\x0B\x27\x85\x85\x85Board\x00\x00") {
+                gameText = "\x07" ~ data.currentTurn.to!string ~ " " ~ Char.SLASH ~ " " ~ data.totalTurns.to!string ~ "\x19\x00\x00";
             }
 
             if (config.randomBonus && data.currentScene == Scene.FINISH_BOARD) {
