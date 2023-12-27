@@ -86,11 +86,13 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     override void onStart() {
         super.onStart();
 
+        /*
         data.currentScene.onWrite((ref Scene scene) {
             if (scene != data.currentScene) {
                 writeln("Scene: ", scene);
             }
         });
+        */
 
         static if (is(typeof(data.randomByteRoutine))) {
             data.randomByteRoutine.addr.onExec({
@@ -229,6 +231,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             if (config.lastPlaceDoubleRoll) {
                 data.numberOfRolls.onRead((ref ubyte rolls) {
                     if (!isBoardScene()) return;
+                    if (data.currentTurn <= 1) return;
                     if (isInLastPlace(currentPlayer) && rolls < 2) {
                         rolls = 2;
                     }
