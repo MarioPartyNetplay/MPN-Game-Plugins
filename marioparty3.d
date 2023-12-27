@@ -30,6 +30,7 @@ class MarioParty3Config : MarioPartyConfig {
     bool enhancedTaunts = true;
     bool preventRepeatMiniGames = true;
     bool randomChanceOrder = false;
+    bool finalTurnItems = true;
     string[] blockedMiniGames;
     PlayerConfig[] players = [
         new PlayerConfig(1),
@@ -467,6 +468,18 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             0x80105B58.onExec({
                 if (data.currentScene != Scene.CHANCE_TIME) return;
                 [0, 1, 2].randomShuffle(random).each!((i, j) => data.chanceOrder[i] = cast(ubyte)j);
+            });
+        }
+
+        if (config.finalTurnItems) {
+            data.currentTurn.onRead((ref ubyte turn) {
+                if (!isBoardScene()) return;
+                if (turn != data.totalTurns) return;
+                if (*pc == 0x800FE420                       || // Item Space
+                   (*pc + 32).val!Instruction == 0x0C036783 || // Toad Shop
+                   (*pc + 32).val!Instruction == 0x0C03B164) { // Item Shop
+                    turn--;
+                }
             });
         }
     }
