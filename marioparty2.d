@@ -11,21 +11,20 @@ import std.random;
 import std.stdio;
 
 class PlayerConfig {
-    int team;
     Item[] items;
     
     this() {}
-    this(int team) { this.team = team; }
 }
 
 class MarioParty2Config : MarioPartyConfig {
     bool carryThreeItems = true;
     bool randomBoardMiniGames = true;
+    int[string] teams;
     PlayerConfig[] players = [
-        new PlayerConfig(1),
-        new PlayerConfig(1),
-        new PlayerConfig(2),
-        new PlayerConfig(2)
+        new PlayerConfig(),
+        new PlayerConfig(),
+        new PlayerConfig(),
+        new PlayerConfig()
     ];
 }
 
@@ -58,6 +57,7 @@ union Space {
 union Player {
     ubyte[52] _data;
     mixin Field!(0x03, ubyte, "controller");
+    mixin Field!(0x04, Character, "character");
     mixin Field!(0x07, ubyte, "flags");
     mixin Field!(0x08, ushort, "coins");
     mixin Field!(0x0E, ushort, "stars");
@@ -153,10 +153,9 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
     override void onStart() {
         super.onStart();
 
-        if (config.teams) {
+        if (config.teamMode) {
             data.duelRoutine.addr.onExec({
                 if (!isBoardScene()) return;
-                writeln("\tDUEL!");
                 teammates(currentPlayer).each!((t) {
                     t.data.coins = 0;
                 });
@@ -175,13 +174,13 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
         if (config.carryThreeItems) {
             players.each!((p) {
-                p.data.item.onRead((ref Item item) {
+                p.data.item.onRead((ref Item item, Address) {
                     if (!isBoardScene()) return;
                     if (p.config.items.empty) {
                         item = Item.NONE;
                     } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
                         item = Item.BOWSER_BOMB;
-                    } else if (itemsFull(p) || data.itemMenuOpen || *pc == 0x8005EEA8 /* Display Item Icon */) {
+                    } else if (itemsFull(p) || data.itemMenuOpen || pc() == 0x8005EEA8 /* Display Item Icon */) {
                         item = p.config.items.back;
                     } else {
                         item = Item.NONE;
@@ -229,9 +228,9 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
         }
 
         if (config.randomBoardMiniGames) {
-            data.currentBoard.onRead((ref Board board) {
+            data.currentBoard.onRead((ref Board board, Address) {
                 if (!isBoardScene()) return;
-                switch (*pc) {
+                switch (pc()) {
                     case 0x80064574: // Duel Mini-Game
                     case 0x80066428: // Item Mini-Game
                         board = random.uniform!Board;

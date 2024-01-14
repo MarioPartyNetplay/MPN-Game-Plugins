@@ -7,6 +7,7 @@ import std.range;
 import std.json;
 import std.traits;
 import std.stdio;
+import std.conv;
 
 enum Color : ubyte {
     CLEAR = 0,
@@ -15,10 +16,21 @@ enum Color : ubyte {
     GREEN = 4
 }
 
+enum Character : ubyte {
+    MARIO   = 0,
+    LUIGI   = 1,
+    PEACH   = 2,
+    YOSHI   = 3,
+    WARIO   = 4,
+    DK      = 5,
+    WALUIGI = 6,
+    DAISY   = 7
+}
+
 class MarioPartyConfig {
-    bool alwaysDuel = true;
-    bool lastPlaceDoubleRoll = true;
-    bool teams = true;
+    bool alwaysDuel = false;
+    bool lastPlaceDoubleRoll = false;
+    bool teamMode = false;
 }
 
 class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
@@ -42,6 +54,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
 
     MemoryType* data;
     Player[] players;
+    int[Character.max+1] teams;
 
     this(string name, string hash) {
         super(name, hash);
@@ -50,6 +63,11 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
 
         foreach (i; 0..4) {
             players ~= new Player(i, data.players[i], config.players[i]);
+        }
+
+        teams = 0;
+        foreach (e; config.teams.byKeyValue) {
+            teams[e.key.to!Character] = e.value;
         }
     }
 
@@ -64,15 +82,21 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     bool isBoardScene() const { return isBoardScene(data.currentScene); }
     bool isScoreScene() const { return isScoreScene(data.currentScene); }
 
+    /*
     void updateTeams() {
         players.dup.sort!(
             (a, b) => (a.isCPU ? 4 : a.data.controller) < (b.isCPU ? 4 : b.data.controller),
             SwapStrategy.stable
         ).each!((i, p) { p.config = config.players[i]; });
     }
+    */
+
+    auto team(const Player p) const {
+        return teams[p.data.character];
+    }
 
     auto teammates(const Player p) {
-        return players.filter!(t => p && t !is p && t.config.team == p.config.team);
+        return players.filter!(t => p && t !is p && team(t) == team(p));
     }
 
     bool isIn4thPlace(const Player p) const {
@@ -86,13 +110,11 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
     override void onStart() {
         super.onStart();
 
-        /*
         data.currentScene.onWrite((ref Scene scene) {
             if (scene != data.currentScene) {
-                writeln("Scene: ", scene);
+                //writeln("Scene: ", scene);
             }
         });
-        */
 
         static if (is(typeof(data.randomByteRoutine))) {
             data.randomByteRoutine.addr.onExec({
@@ -100,7 +122,8 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
             });
         }
 
-        if (config.teams) {
+        if (config.teamMode) {
+            /*
             if (isBoardScene()) {
                 updateTeams();
             }
@@ -110,6 +133,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     updateTeams();
                 }
             });
+            */
             
             players.each!((p) {
                 p.data.coins.onWrite((ref ushort coins) {
@@ -147,42 +171,42 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
                     if (!isBoardScene()) return;
                     if (p.data.flags == flags) return;
                     p.data.flags = flags;
-                    updateTeams();
+                    //updateTeams();
                 });
                 p.data.controller.onWrite((ref ubyte controller) {
                     if (!isBoardScene()) return;
                     if (p.data.controller == controller) return;
                     p.data.controller = controller;
-                    updateTeams();
+                    //updateTeams();
                 });
             });
 
             /*
-            static if (is(typeof(data.playerCards)) && is(typeof(data.drawPlayerColor))) {
+            static if (is(typeof(data.playerPanels)) && is(typeof(data.drawPlayerColor))) {
                 data.drawPlayerColor.addr.onExec({
                     if (!isBoardScene()) return;
                     if (gpr.a1 == Color.CLEAR) return;
                     auto p = players[gpr.a0];
                     auto t = teammates(p).find!(t => t.index < p.index);
                     if (!t.empty) {
-                        gpr.a1 = data.playerCards[t.front.index].color;
+                        gpr.a1 = data.playerPanels[t.front.index].color;
                     }
                 });
             }
             */
 
-            static if (is(typeof(data.playerCards)) && is(typeof(data.determineTeams))) {
+            static if (is(typeof(data.playerPanels)) && is(typeof(data.determineTeams))) {
                 data.determineTeams.addr.onExec({
                     if (!isBoardScene()) return;
 
-                    auto splitTeams = players.all!(p => teammates(p).any!(t =>
-                      data.playerCards[t.index].color != data.playerCards[p.index].color));
+                    auto allTeamsSplit = players.all!(p => teammates(p).any!(t =>
+                      data.playerPanels[t.index].color != data.playerPanels[p.index].color));
                       
-                    if (splitTeams) {
-                        foreach(i; 0..4) {
-                            data.playerCards[i].color = cast(ubyte)players[i].config.team;
-                        }
-                    }
+                    if (!allTeamsSplit) return;
+                    
+                    players.each!((i, p) {
+                        data.playerPanels[i].color = (team(p) == team(players[0]) ? Color.BLUE : Color.RED);
+                    });
                 });
             }
 

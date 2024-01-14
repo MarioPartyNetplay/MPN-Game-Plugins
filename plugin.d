@@ -52,7 +52,7 @@ struct Ptr(T) {
 
     this(Address a) { address = a; }
     ref Ptr!T opAssign(Address a) { address = a; return this; }
-    ref T opIndex(int i) { return *Ptr!T(address + i * T.sizeof); }
+    ref T opIndex(size_t i) { return *Ptr!T(address + cast(int)(i * T.sizeof)); }
     ref T opUnary(string op)() if (op == "*") { return *swapAddrEndian(cast(T*)&memory[address - 0x80000000]); }
     ref Ptr!T opUnary(string op)() if (op == "++") { address += T.sizeof; return this; }
     ref Ptr!T opUnary(string op)() if (op == "--") { address -= T.sizeof; return this; }
@@ -66,7 +66,7 @@ align (1) struct Arr(T, size_t S = 0) {
     
     @property size_t length() const { return S; }
     @property bool empty() const { return S == 0; }
-    ref T opIndex(int i) { return *swapAddrEndian(swapAddrEndian(&front) + i); }
+    ref T opIndex(size_t i) { return *swapAddrEndian(swapAddrEndian(&front) + i); }
 
     int opApply(scope int delegate(ref T) dg) {
         foreach (i; 0..S) {
@@ -291,7 +291,7 @@ Range distanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if
         }
     }
 
-    if (uniform(0, 2, gen)) {
+    if (uniform!"[]"(0, 1, gen)) {
         dS(r);
     } else {
         dS(retro(r));
@@ -373,7 +373,7 @@ enum BUTTON : ushort {
     A   = 0x8000
 }
 
-union Input {
+union InputData {
     struct {
         ushort buttons;
         byte analogY;
@@ -389,7 +389,8 @@ interface Plugin {
     void loadConfig();
     void saveConfig();
     void onStart();
-    void onFrame(ulong, Input*);
+    void onInput(int, InputData*);
+    void onFrame(ulong);
     void onFinish();
 }
 
@@ -419,8 +420,13 @@ abstract class Game(ConfigType) : Plugin {
     }
 
     void onStart() { }
-    void onFrame(ulong, Input*) { }
+    void onInput(int, InputData*) { }
+    void onFrame(ulong) { }
     void onFinish() { saveConfig(); }
+}
+
+void addAddress(Address addr) {
+    addrMask[(addr & 0b111111111100000) >> 5] |= (1 << ((addr & 0b11100) >> 2));
 }
 
 void onExec(Address address, void delegate(Address) callback) {
@@ -443,28 +449,30 @@ void onExecOnce(Address address, void delegate() callback) {
     onExecOnce(address, (Address) { callback(); });
 }
 
-void onRead(T)(ref T r, void delegate() callback) { onRead!T(r, (ref T r, ref T v) { callback(); }); }
-void onRead(T)(ref T r, void delegate(ref T) callback) { onRead!T(r, (ref T r, ref T v) { callback(v); }); }
-void onRead(T)(ref T r, void delegate(ref T, ref T) callback) {
-    handlers!(T.sizeof).read[r.addr] ~= (a, v) { callback(a.val!T, *cast(T*)v); };
+void onRead(T)(ref T r, void delegate() callback)               { onRead!T(r, (ref T v, Address a) { callback(); }); }
+void onRead(T)(ref T r, void delegate(ref T) callback)          { onRead!T(r, (ref T v, Address a) { callback(v); }); }
+void onRead(T)(ref T r, void delegate(ref T, Address) callback) {
+    handlers!(T.sizeof).read[r.addr] ~= (v, a) { callback(*cast(T*)v, a); };
     addAddress(r.addr);
 }
 
-void onWrite(T)(ref T r, void delegate() callback) { onWrite(r, (ref T r, ref T v) { callback(); }); }
-void onWrite(T)(ref T r, void delegate(ref T) callback) { onWrite(r, (ref T r, ref T v) { callback(v); }); }
-void onWrite(T)(ref T r, void delegate(ref T, ref T) callback) {
-    handlers!(T.sizeof).write[r.addr] ~= (a, v) { callback(a.val!T, *cast(T*)v); };
+void onWrite(T)(ref T r, void delegate() callback)               { onWrite(r, (ref T v, Address a) { callback(); }); }
+void onWrite(T)(ref T r, void delegate(ref T) callback)          { onWrite(r, (ref T v, Address a) { callback(v); }); }
+void onWrite(T)(ref T r, void delegate(ref T, Address) callback) {
+    handlers!(T.sizeof).write[r.addr] ~= (v, a) { callback(*cast(T*)v, a); };
     addAddress(r.addr);
 }
 
-void jal(Address addr, void delegate() callback) {
-    auto ra = *pc + 4;
-    *pc = addr - 4;
+void jal(Address addr, uint[] args ...) {
+    Address ra = pc() + 4;
+    jump(addr - 4);
     addr.onExecOnce({
-        auto g = *gpr;
-        auto f = *fpr;
+        auto g = *gpr, f = *fpr;
         gpr.ra = ra;
-        callback();
+        if (args.length >= 1) gpr.a0 = args[0];
+        if (args.length >= 2) gpr.a1 = args[1];
+        if (args.length >= 3) gpr.a2 = args[2];
+        if (args.length >= 4) gpr.a3 = args[3];
         ra.onExecOnce({ *gpr = g; *fpr = f; });
     });
 } 
@@ -482,68 +490,51 @@ void handleException(Exception e) {
     MessageBoxA(window, e.toString.toStringz, "Error", MB_OK);
 }
 
+struct ExecutionInfo {
+    HWND window;
+    const char* romName;
+    const char* romHash;
+    ubyte* addrMask;
+    uint function() pc;
+    void function(uint) jump;
+    GPR* gpr;
+    FPR* fpr;
+    ubyte* memory;
+    uint memorySize;
+}
+
 __gshared {
     Xoshiro256pp random;
 	HMODULE dll;
 	string dllPath;
     HWND window;
     Plugin plugin;
-    extern (C) void function(Address) addAddress;
-    Address* pc;
+    ubyte* addrMask;
+    uint function() pc;
+    void function(uint) jump;
     GPR* gpr;
     FPR* fpr;
     ubyte[] memory;
     ulong frame;
-    Input[4] previous;
+    InputData[4] previous;
     Plugin function(string, string) pluginFactory;
     void delegate(Address)[][Address] executeHandlers;
     void delegate(Address)[][Address] executeOnceHandlers;
     template handlers(int S) {
-        void delegate(Address, void*)[][Address] read;
-        void delegate(Address, void*)[][Address] write;
+        void delegate(void*, Address)[][Address] read;
+        void delegate(void*, Address)[][Address] write;
     }
 }
 
 extern (C) {
-    export void RomOpen(
-      HWND hwnd,
-      const char* romName,
-      const char* romHash,
-      void function(Address) _addAddress,
-      Address* _pc,
-      GPR* _gpr,
-      FPR* _fpr,
-      ubyte* _memory,
-      uint _memorySize) {
-        try {
-            allocConsole();
-            random.seed(0);
-            window = hwnd;
-            addAddress = _addAddress;
-            pc = _pc;
-            gpr = _gpr;
-            fpr = _fpr;
-            memory = _memory[0 .. _memorySize];
-            frame = 0;
-            previous.each!((ref b) { b.value = 0; });
-            executeHandlers.clear();
-            executeOnceHandlers.clear();
-            handlers!1.read.clear();
-            handlers!2.read.clear();
-            handlers!4.read.clear();
-            handlers!8.read.clear();
-            handlers!1.write.clear();
-            handlers!2.write.clear();
-            handlers!4.write.clear();
-            handlers!8.write.clear();
-            if (pluginFactory) {
-                plugin = pluginFactory(romName.to!string(), romHash.to!string());
-            } else {
-                plugin = null;
-            }
-        } catch (Exception e) {
-            handleException(e);
-        }
+    export int PluginStartup(void*, void*, void*) { return 0; }
+
+    export int PluginShutdown() { return 0; }
+
+    export int PluginGetVersion(int*, int*, int*, const char**, int*) { return 0; }
+
+    export void RomOpen() {
+        
     }
 
     export void RomClosed() {
@@ -557,24 +548,61 @@ extern (C) {
         }
     }
 
-    export void FrameHandler(Input* input) {
+    export void InitiateExecution(ExecutionInfo info) {
+        try {
+            allocConsole();
+            random.seed(0);
+            window = info.window;
+            addrMask = info.addrMask;
+            pc = info.pc;
+            jump = info.jump;
+            gpr = info.gpr;
+            fpr = info.fpr;
+            memory = info.memory[0..info.memorySize];
+            frame = 0;
+            previous.each!((ref b) { b.value = 0; });
+            executeHandlers.clear();
+            executeOnceHandlers.clear();
+            handlers!1.read.clear();
+            handlers!2.read.clear();
+            handlers!4.read.clear();
+            handlers!8.read.clear();
+            handlers!1.write.clear();
+            handlers!2.write.clear();
+            handlers!4.write.clear();
+            handlers!8.write.clear();
+
+            if (pluginFactory) {
+                string romName = info.romName.to!string().strip();
+                string romHash = info.romHash.to!string().strip();
+                plugin = pluginFactory(romName, romHash);
+                writeln("Plugin: ", romName);
+            } else {
+                plugin = null;
+            }
+        } catch (Exception e) {
+            handleException(e);
+        }
+    }
+
+    export void Input(int port, InputData* input) {
+        if (*input && *input != previous[port]) {
+            // Choose a random bit to flip in the state of the RNG by hashing the input, port, and frame
+            ubyte bit = SplitMix64.hash((frame << 34) | (cast(ulong)port << 32) | *input) >> 56;
+            random.state[bit/64] ^= 1UL << (bit%64);
+        }
+        previous[port] = *input;
+    }
+
+    export void Frame(uint f) {
         if (plugin) {
             if (frame == 0) {
                 try { plugin.onStart(); }
                 catch (Exception e) { handleException(e); }
             }
 
-            try { plugin.onFrame(frame, input); }
+            try { plugin.onFrame(frame); }
             catch (Exception e) { handleException(e); }
-        }
-
-        foreach (port; 0..4) {
-            if (input[port] && input[port] != previous[port]) {
-                // Choose a random bit to flip in the state of the RNG by hashing the input, port, and frame
-                ubyte bit = SplitMix64.hash((frame << 34) | (cast(ulong)port << 32) | input[port]) >> 56;
-                random.state[bit/64] ^= 1UL << (bit%64);
-            }
-            previous[port] = input[port];
         }
 
         random.popFront();
@@ -582,7 +610,7 @@ extern (C) {
         frame++;
     }
 
-    export void ExecutionHandler(Address address) {
+    export void Execute(Address address) {
         if (auto handlers = (address in executeHandlers)) {
             (*handlers).each!((h) {
                 try { h(address); }
@@ -599,32 +627,32 @@ extern (C) {
         }
     }
 
-    void ReadHandler(int S)(Address address, void* value) {
-        if (auto handlers = (address in handlers!(S).read)) {
+    void ReadHandler(int S)(void* value, Address addr) {
+        if (auto handlers = (addr in handlers!(S).read)) {
             (*handlers).each!((h) {
-                try { h(address, value); }
+                try { h(value, addr); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    void WriteHandler(int S)(Address address, void* value) {
-        if (auto handlers = (address in handlers!(S).write)) {
+    void WriteHandler(int S)(void* value, Address addr) {
+        if (auto handlers = (addr in handlers!(S).write)) {
             (*handlers).each!((h) {
-                try { h(address, value); }
+                try { h(value, addr); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    export void ReadByteHandler  (Address address, ubyte  *value) { ReadHandler !1(address, value); }
-    export void ReadShortHandler (Address address, ushort *value) { ReadHandler !2(address, value); }
-    export void ReadIntHandler   (Address address, uint   *value) { ReadHandler !4(address, value); }
-    export void ReadLongHandler  (Address address, ulong  *value) { ReadHandler !8(address, value); }
-    export void WriteByteHandler (Address address, ubyte  *value) { WriteHandler!1(address, value); }
-    export void WriteShortHandler(Address address, ushort *value) { WriteHandler!2(address, value); }
-    export void WriteIntHandler  (Address address, uint   *value) { WriteHandler!4(address, value); }
-    export void WriteLongHandler (Address address, ulong  *value) { WriteHandler!8(address, value); }
+    export void Read8  (Address addr, ubyte  *value) { ReadHandler !1(value, addr); }
+    export void Read16 (Address addr, ushort *value) { ReadHandler !2(value, addr); }
+    export void Read32 (Address addr, uint   *value) { ReadHandler !4(value, addr); }
+    export void Read64 (Address addr, ulong  *value) { ReadHandler !8(value, addr); }
+    export void Write8 (Address addr, ubyte  *value) { WriteHandler!1(value, addr); }
+    export void Write16(Address addr, ushort *value) { WriteHandler!2(value, addr); }
+    export void Write32(Address addr, uint   *value) { WriteHandler!4(value, addr); }
+    export void Write64(Address addr, ulong  *value) { WriteHandler!8(value, addr); }
 }
 
 extern (Windows)
