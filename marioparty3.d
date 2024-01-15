@@ -200,6 +200,24 @@ immutable BONUS_TEXT_REPLACEMENT = [
     ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
 ];
 
+void showMessage(ubyte character, string msg) {
+    auto mtrPtr = Ptr!char(0x80800000 - cast(uint)msg.length);
+    msg.each!((i, c) { mtrPtr[i] = c; });
+    gpr.sp -= 32;
+    *Ptr!uint(gpr.sp + 16) = 0;
+    *Ptr!uint(gpr.sp + 20) = 0;
+    *Ptr!uint(gpr.sp + 24) = 0;
+    jal(0x800EC92C, {
+        jal(0x800EC9DC, {
+            jal(0x800EC6C8, {
+                jal(0x800EC6EC, {
+                    gpr.sp += 32;
+                });
+            });
+        });
+    }, character, mtrPtr, 0, 0);
+}
+
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     StateConfig state;
     string gameText;
@@ -444,7 +462,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
 
         if (config.enhancedTaunts) {
-            data.storeButtonPress.addr.onExec({
+            data.storeButtonPress.addr.onExecDone({
                 if (gpr.v0 == 0 || data.totalTurns == 0) return;
 
                 SFX sfx;
@@ -588,28 +606,12 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 p.data.gameCoinsMain.onRead(doubleCoins);
                 p.data.gameCoinsExtra.onRead(doubleCoins);
             });
-            0x800E08EC.onExec({
+
+            0x800FEF68.onExecDone({
                 if (!isBoardScene()) return;
                 if (data.currentTurn % INTERVAL != 0) return;
-                if (gpr.s5 != 4 || gpr.s4 != 16) return;
-                auto msg = "           Bonus Mini=Game\xC2\n\n"
-                         ~ "                \x0F\x07Coins \x3E 2\x02\x16\xFF\x00";
-                auto mtrPtr = Ptr!char(0x80800000 - cast(uint)msg.length);
-                msg.each!((i, c) { mtrPtr[i] = c; });
-                gpr.sp -= 32;
-                *Ptr!uint(gpr.sp + 16) = 0;
-                *Ptr!uint(gpr.sp + 20) = 0;
-                *Ptr!uint(gpr.sp + 24) = 0;
-                0x800EC92C.jal(0x15, mtrPtr, 0, 0);
-                0x800E08F0.onExecOnce({ jal(0x800EC9DC); });
-                0x800E08F4.onExecOnce({ jal(0x800EC6C8); });
-                0x800E08F8.onExecOnce({ jal(0x800EC6EC); });
-                0x800E08FC.onExecOnce({
-                    gpr.sp += 32;
-
-                    gpr.a0 = 0x800D5558;
-                    gpr.v0 = gpr.s0 * 7;
-                });
+                showMessage(0x15, "          Bonus Mini=Game\xC2\n\n" ~
+                                  "               \x0F\x07Coins \x3E 2\x02\x16\xFF\x00");
             });
         }
 

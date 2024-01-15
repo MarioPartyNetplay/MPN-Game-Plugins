@@ -449,6 +449,26 @@ void onExecOnce(Address address, void delegate() callback) {
     onExecOnce(address, (Address) { callback(); });
 }
 
+void onExecDone(Address address, void delegate(Address) callback) {
+    assert(address % 4 == 0);
+    executeDoneHandlers[address] ~= callback;
+    addAddress(address);
+}
+
+void onExecDone(Address address, void delegate() callback) {
+    onExecDone(address, (Address) { callback(); });
+}
+
+void onExecDoneOnce(Address address, void delegate(Address) callback) {
+    assert(address % 4 == 0);
+    executeDoneOnceHandlers[address] ~= callback;
+    addAddress(address);
+}
+
+void onExecDoneOnce(Address address, void delegate() callback) {
+    onExecDoneOnce(address, (Address) { callback(); });
+}
+
 void onRead(T)(ref T r, void delegate() callback)               { onRead!T(r, (ref T v, Address a) { callback(); }); }
 void onRead(T)(ref T r, void delegate(ref T) callback)          { onRead!T(r, (ref T v, Address a) { callback(v); }); }
 void onRead(T)(ref T r, void delegate(ref T, Address) callback) {
@@ -464,16 +484,22 @@ void onWrite(T)(ref T r, void delegate(ref T, Address) callback) {
 }
 
 void jal(Address addr, uint[] args ...) {
-    Address ra = pc() + 4;
-    jump(addr - 4);
-    addr.onExecOnce({
-        auto g = *gpr, f = *fpr;
-        gpr.ra = ra;
-        if (args.length >= 1) gpr.a0 = args[0];
-        if (args.length >= 2) gpr.a1 = args[1];
-        if (args.length >= 3) gpr.a2 = args[2];
-        if (args.length >= 4) gpr.a3 = args[3];
-        ra.onExecOnce({ *gpr = g; *fpr = f; });
+    jal(addr, null, args);
+}
+
+void jal(Address addr, void delegate() callback, uint[] args ...) {
+    auto g = *gpr;
+    auto f = *fpr;
+    gpr.ra = pc();
+    if (args.length >= 1) gpr.a0 = args[0];
+    if (args.length >= 2) gpr.a1 = args[1];
+    if (args.length >= 3) gpr.a2 = args[2];
+    if (args.length >= 4) gpr.a3 = args[3];
+    jump(addr);
+    gpr.ra.onExecOnce({
+        *gpr = g;
+        *fpr = f;
+        if (callback) callback();
     });
 } 
 
@@ -520,6 +546,8 @@ __gshared {
     Plugin function(string, string) pluginFactory;
     void delegate(Address)[][Address] executeHandlers;
     void delegate(Address)[][Address] executeOnceHandlers;
+    void delegate(Address)[][Address] executeDoneHandlers;
+    void delegate(Address)[][Address] executeDoneOnceHandlers;
     template handlers(int S) {
         void delegate(void*, Address)[][Address] read;
         void delegate(void*, Address)[][Address] write;
@@ -619,11 +647,28 @@ extern (C) {
         }
         
         if (auto handlers = (address in executeOnceHandlers)) {
+            executeOnceHandlers.remove(address);
             (*handlers).each!((h) {
                 try { h(address); }
                 catch (Exception e) { handleException(e); }
             });
+        }
+    }
+
+    export void ExecuteDone(Address address) {
+        if (auto handlers = (address in executeDoneHandlers)) {
+            (*handlers).each!((h) {
+                try { h(address); }
+                catch (Exception e) { handleException(e); }
+            });
+        }
+        
+        if (auto handlers = (address in executeDoneOnceHandlers)) {
             executeOnceHandlers.remove(address);
+            (*handlers).each!((h) {
+                try { h(address); }
+                catch (Exception e) { handleException(e); }
+            });
         }
     }
 
