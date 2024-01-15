@@ -200,22 +200,39 @@ immutable BONUS_TEXT_REPLACEMENT = [
     ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
 ];
 
-void showMessage(ubyte character, string msg) {
-    auto mtrPtr = Ptr!char(0x80800000 - cast(uint)msg.length);
-    msg.each!((i, c) { mtrPtr[i] = c; });
+void mallocPerm(size_t size, void delegate(uint ptr) callback) {
+    0x80035864.jal(cast(ushort)size, callback);
+}
+
+void freePerm(uint ptr, void delegate() callback) {
+    0x80035888.jal(ptr, callback);
+}
+
+void mallocTemp(size_t size, void delegate(uint ptr) callback) {
+    0x80035934.jal(cast(ushort)size, callback);
+}
+
+void freeTemp(uint ptr, void delegate() callback) {
+    0x80035958.jal(ptr, callback);
+}
+
+void showMessage(string message, byte character = -1) {
+    message ~= '\x00';
+    gpr.sp -= cast(uint)(message.length + 0b11) & ~0b11;
+    message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
     *Ptr!uint(gpr.sp + 16) = 0;
     *Ptr!uint(gpr.sp + 20) = 0;
     *Ptr!uint(gpr.sp + 24) = 0;
-    jal(0x800EC92C, {
-        jal(0x800EC9DC, {
-            jal(0x800EC6C8, {
-                jal(0x800EC6EC, {
-                    gpr.sp += 32;
+    0x800EC92C.jal(character, gpr.sp + 32, 0, 0, { // ShowMessage
+        0x800EC9DC.jal({
+            0x800EC6C8.jal({                       // CloseMessage
+                0x800EC6EC.jal({
+                    gpr.sp += 32 + (cast(uint)(message.length + 0b11) & ~0b11);
                 });
             });
         });
-    }, character, mtrPtr, 0, 0);
+    });
 }
 
 class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
@@ -378,10 +395,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (scene != Scene.FINISH_BOARD) return;
                 bonus.partialShuffle(3, random);
                 writeln("Bonus Stars: ", bonus[0..3]);
-                writeln("Lucky Spaces:");
-                state.luckySpaceCount.each!((i, count) {
-                    writefln("    %-8s %2d", data.players[i].character.to!string ~ ':', count);
-                });
             });
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
@@ -422,6 +435,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             data.currentTurn.onWrite((ref ubyte turn) {
                 if (data.currentScene != Scene.TRANSITION) return;
                 if (turn != 1) return;
+
                 foreach (ref queue; state.miniGameQueue.byValue()) {
                     queue = queue.remove!(e => e == SHUFFLE_MINI_GAMES);
                     queue.distanceShuffleUniform((queue.length-1)/2, random);
@@ -506,20 +520,30 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
 
         if (config.luckySpaceRatio > 0) {
+            Ptr!Address luckySpaceImagePtr = 0;
             bool resetLuckySpaces = state.luckySpaces.empty;
             ubyte[] bSpaces, lSpaces;
-            data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onWrite((ref Address ptr) { // Load lucky space texture
+            
+            0x8003592C.onExecDone({ // Finish making temp heap
+                luckySpaceImagePtr = 0;
                 if (!isBoardScene()) return;
-                ptr = 0x80400000 - cast(uint)LUCKY_SPACE_IMAGE.length - 0x10;
-                bool occupied = false;
-                LUCKY_SPACE_IMAGE.each!((i, ref b) {
-                    auto dest = Ptr!ubyte(ptr + 0x10 + cast(uint)i);
-                    if (*dest && *dest != b) occupied = true;
-                    *dest = b;
+
+                mallocTemp(LUCKY_SPACE_IMAGE.length + 0x10, (ptr) {
+                    LUCKY_SPACE_IMAGE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
+                    luckySpaceImagePtr = ptr;
                 });
-                if (occupied) writeln("Warning: Memory occupied");
             });
-            0x800EA4F0.onExec({ if (isBoardScene()) gpr.a0 = false; }); // Force high res space textures on full map view
+            data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onRead((ref Address ptr) {
+                if (!isBoardScene()) return;
+                if (*Ptr!uint(pc()) != 0x8C420000) return;
+                
+                ptr = luckySpaceImagePtr;
+            });
+            0x800EA4F0.onExec({ // Force high res space textures on full map view
+                if (!isBoardScene()) return;
+
+                gpr.a0 = false;
+            });
             data.currentScene.onWrite((ref Scene scene) { // Reset lucky spaces at start of game
                 if (scene == Scene.START_BOARD) {
                     state.luckySpaces.length = 0;
@@ -592,6 +616,13 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 
                 gpr.v0 = uniform!"[]"(0, 1, random);
             });
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene != Scene.FINISH_BOARD) return;
+                writeln("Lucky Spaces:");
+                state.luckySpaceCount.each!((i, count) {
+                    writefln("    %-8s %2d", data.players[i].character.to!string ~ ':', count);
+                });
+            });
         }
 
         if (config.doubleCoinMiniGames) {
@@ -610,8 +641,9 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             0x800FEF68.onExecDone({
                 if (!isBoardScene()) return;
                 if (data.currentTurn % INTERVAL != 0) return;
-                showMessage(0x15, "          Bonus Mini=Game\xC2\n\n" ~
-                                  "               \x0F\x07Coins \x3E 2\x02\x16\xFF\x00");
+
+                showMessage("          Bonus Mini=Game\xC2\n\n" ~
+                            "               \x0F\x07Coins \x3E 2\x02\x16\xFF", 0x15);
             });
         }
 
@@ -619,7 +651,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             /*
             0x8010B374.onExec({
                 if (data.currentScene != Scene.MPIQ) return;
-                
                 gpr.v0 = -1; // Force all answers to be incorrect for testing purposes
             });
             */
@@ -636,20 +667,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 }
             });
         }
-
-        /*
-        0x8012CDD1.val!ubyte.onRead((ref ubyte s, Address) {
-            if (pc() == 0x800EBE1C) {
-                s = Space.Type.RED;
-            }
-            if (pc() == 0x800EB628) {
-                s = Space.Type.HAPPENING;
-            }
-            if (pc() == 0x800EB77C) {
-                s = Space.Type.BATTLE;
-            }
-        });
-        */
     }
 }
 

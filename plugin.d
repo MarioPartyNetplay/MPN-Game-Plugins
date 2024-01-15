@@ -483,25 +483,38 @@ void onWrite(T)(ref T r, void delegate(ref T, Address) callback) {
     addAddress(r.addr);
 }
 
-void jal(Address addr, uint[] args ...) {
-    jal(addr, null, args);
-}
-
-void jal(Address addr, void delegate() callback, uint[] args ...) {
-    auto g = *gpr;
-    auto f = *fpr;
+void jal(Address addr)                                                                   { jal(addr,  0,  0,  0,  0, (res) { }); }
+void jal(Address addr,                                     void delegate()     callback) { jal(addr,  0,  0,  0,  0, (res) { callback(); }); }
+void jal(Address addr,                                     void delegate(uint) callback) { jal(addr,  0,  0,  0,  0, callback); }
+void jal(Address addr, uint a0)                                                          { jal(addr, a0,  0,  0,  0, (res) { }); }
+void jal(Address addr, uint a0,                            void delegate()     callback) { jal(addr, a0,  0,  0,  0, (res) { callback(); }); }
+void jal(Address addr, uint a0,                            void delegate(uint) callback) { jal(addr, a0,  0,  0,  0, callback); }
+void jal(Address addr, uint a0, uint a1)                                                 { jal(addr, a0, a1,  0,  0, (res) { }); }
+void jal(Address addr, uint a0, uint a1,                   void delegate()     callback) { jal(addr, a0, a1,  0,  0, (res) { callback(); }); }
+void jal(Address addr, uint a0, uint a1,                   void delegate(uint) callback) { jal(addr, a0, a1,  0,  0, callback); }
+void jal(Address addr, uint a0, uint a1, uint a2)                                        { jal(addr, a0, a1, a2,  0, (res) { }); }
+void jal(Address addr, uint a0, uint a1, uint a2,          void delegate()     callback) { jal(addr, a0, a1, a2,  0, (res) { callback(); }); }
+void jal(Address addr, uint a0, uint a1, uint a2,          void delegate(uint) callback) { jal(addr, a0, a1, a2,  0, callback); }
+void jal(Address addr, uint a0, uint a1, uint a2, uint a3)                               { jal(addr, a0, a1, a2, a3, (res) { }); }
+void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate()     callback) { jal(addr, a0, a1, a2, a3, (res) { callback(); }); }
+void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) callback) {
+    GPR g = *gpr;
+    FPR f = *fpr;
     gpr.ra = pc();
-    if (args.length >= 1) gpr.a0 = args[0];
-    if (args.length >= 2) gpr.a1 = args[1];
-    if (args.length >= 3) gpr.a2 = args[2];
-    if (args.length >= 4) gpr.a3 = args[3];
+    gpr.a0 = a0;
+    gpr.a1 = a1;
+    gpr.a2 = a2;
+    gpr.a3 = a3;
     jump(addr);
     gpr.ra.onExecOnce({
+        uint v0 = gpr.v0;
         *gpr = g;
         *fpr = f;
-        if (callback) callback();
+        if (callback) {
+            callback(v0);
+        }
     });
-} 
+}
 
 void allocConsole() {
     import core.stdc.stdio;
@@ -605,6 +618,9 @@ extern (C) {
                 string romHash = info.romHash.to!string().strip();
                 plugin = pluginFactory(romName, romHash);
                 writeln("Plugin: ", romName);
+
+                try { plugin.onStart(); }
+                catch (Exception e) { handleException(e); }
             } else {
                 plugin = null;
             }
@@ -624,11 +640,6 @@ extern (C) {
 
     export void Frame(uint f) {
         if (plugin) {
-            if (frame == 0) {
-                try { plugin.onStart(); }
-                catch (Exception e) { handleException(e); }
-            }
-
             try { plugin.onFrame(frame); }
             catch (Exception e) { handleException(e); }
         }
