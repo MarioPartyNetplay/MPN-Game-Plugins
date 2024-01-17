@@ -33,6 +33,7 @@ class MarioParty3Config : MarioPartyConfig {
     bool mpiqPermadeath = true;
     bool finalResultsDoNotProceed = true;
     bool improveLastFiveTurnsBonus = true;
+    bool singleUseBattleSpaces = true;
     PlayerConfig[] players = [
         new PlayerConfig(),
         new PlayerConfig(),
@@ -68,6 +69,7 @@ class StateConfig {
     int[][string] miniGameQueue;
     ubyte[] luckySpaces;
     int[] luckySpaceCount = [0, 0, 0, 0];
+    ubyte[] usedBattleSpaces;
 }
 
 union Data {
@@ -85,6 +87,7 @@ union Data {
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
     mixin Field!(0x800FB624, Instruction, "battleRoutine");
+    mixin Field!(0x800FC3C8, Instruction, "battleRoutineComplete");
     mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
     mixin Field!(0x80036574, Instruction, "textLength");
     mixin Field!(0x800365A8, Instruction, "textChar");
@@ -218,7 +221,7 @@ void freeTemp(uint ptr, void delegate() callback) {
     0x80035958.jal(ptr, callback);
 }
 
-void showMessage(string message, byte character = -1) {
+void showPlayerMessage(string message, byte character = -1) {
     message ~= '\x00';
     gpr.sp -= cast(uint)(message.length + 0b11) & ~0b11;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
@@ -226,12 +229,30 @@ void showMessage(string message, byte character = -1) {
     *Ptr!uint(gpr.sp + 16) = 0;
     *Ptr!uint(gpr.sp + 20) = 0;
     *Ptr!uint(gpr.sp + 24) = 0;
-    0x800EC92C.jal(character, gpr.sp + 32, 0, 0, { // ShowMessage
+    0x800EC8EC.jal(character, gpr.sp + 32, 0, 0, { // ShowPlayerMessage
         0x800EC9DC.jal({
             0x800EC6C8.jal({                       // CloseMessage
                 0x800EC6EC.jal({
                     gpr.sp += 32 + (cast(uint)(message.length + 0b11) & ~0b11);
                 });
+            });
+        });
+    });
+}
+
+void showGlobalMessage(string message, byte character = -1) {
+    message ~= '\x00';
+    gpr.sp -= cast(uint)(message.length + 0b11) & ~0b11;
+    message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
+    gpr.sp -= 32;
+    *Ptr!uint(gpr.sp + 16) = 0;
+    *Ptr!uint(gpr.sp + 20) = 0;
+    *Ptr!uint(gpr.sp + 24) = 0;
+    0x800EC92C.jal(character, gpr.sp + 32, 0, 0, { // ShowGlobalMessage
+        // 0x800ECA38?
+        0x800EC6C8.jal({                           // CloseMessage
+            0x800EC6EC.jal({
+                gpr.sp += 32 + (cast(uint)(message.length + 0b11) & ~0b11);
             });
         });
     });
@@ -432,9 +453,13 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
 
         if (config.replaceChanceSpaces) {
-            0x800FC594.onExec({ 0x800FC5A4.val!Instruction = 0x10000085; });
+            0x800FC594.onExec({
+                if (!isBoardScene()) return;
+                0x800FC5A4.val!Instruction = 0x10000085;
+            });
             0x800EAEF4.onExec({
-                if (isBoardScene() && gpr.v0 == Space.Type.CHANCE) {
+                if (!isBoardScene()) return;
+                if (gpr.v0 == Space.Type.CHANCE) {
                     gpr.v0 = Space.Type.GAME_GUY;
                 }
             });
@@ -558,6 +583,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     state.luckySpaces.length = 0;
                     state.luckySpaceCount = [0, 0, 0, 0];
                     resetLuckySpaces = true;
+                    saveState();
                 }
             });
             data.spacesLoaded.addr.onExec({ // Choose lucky spaces
@@ -651,8 +677,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (!isBoardScene()) return;
                 if (data.currentTurn % INTERVAL != 0) return;
 
-                showMessage("          Bonus Mini=Game\xC2\n\n" ~
-                            "               \x0F\x07Coins \x3E 2\x02\x16\xFF", 0x15);
+                showGlobalMessage("          Bonus Mini=Game\xC2\n\n" ~
+                                  "               \x0F\x07Coins \x3E 2\x02\x16\xFF", 0x15);
             });
         }
 
@@ -703,6 +729,36 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             0x80106EF4.onExecDone({ // Apply prize amount
                 if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
                 gpr.a1 = lastFiveTurnsBonus;
+            });
+        }
+
+        if (config.singleUseBattleSpaces) {
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.START_BOARD) {
+                    state.usedBattleSpaces.length = 0;
+                    saveState();
+                }
+            });
+
+            data.battleRoutineComplete.addr.onExec({
+                if (!isBoardScene()) return;
+                if (!gpr.v0) return; // Battle cancelled
+                auto spaces = Ptr!Space(data.pointerToSpaces);
+                if (spaces[data.currentSpaceIndex].type != Space.Type.BATTLE) return;
+                if (state.usedBattleSpaces.canFind(data.currentSpaceIndex)) return;
+                state.usedBattleSpaces ~= data.currentSpaceIndex;
+                saveState();
+            });
+
+            0x800FC594.onExec({
+                if (!isBoardScene()) return;
+                0x800FC5A4.val!Instruction = 0x10000085;
+            });
+            0x800EAEF4.onExec({
+                if (!isBoardScene()) return;
+                if (gpr.v0 == Space.Type.BATTLE && state.usedBattleSpaces.canFind(gpr.s2)) {
+                    gpr.v0 = Space.Type.BLUE;
+                }
             });
         }
     }
