@@ -31,6 +31,8 @@ class MarioParty3Config : MarioPartyConfig {
     string[] blockedMiniGames;
     bool doubleCoinMiniGames = true;
     bool mpiqPermadeath = true;
+    bool finalResultsDoNotProceed = true;
+    bool improveLastFiveTurnsBonus = true;
     PlayerConfig[] players = [
         new PlayerConfig(),
         new PlayerConfig(),
@@ -239,6 +241,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     StateConfig state;
     string gameText;
     BonusType[] bonus;
+    int lastFiveTurnsBonus = 20;
 
     this(string name, string hash) {
         super(name, hash);
@@ -349,6 +352,12 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                         }
                         break;
                     }
+                }
+            }
+
+            if (config.improveLastFiveTurnsBonus && data.currentScene == Scene.LAST_FIVE_TURNS) {
+                if (gameText.canFind("present of")) {
+                    gameText = gameText.replace("10", lastFiveTurnsBonus.to!string);
                 }
             }
             
@@ -665,6 +674,35 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 } else if (gpr.v0 == 1 && allNoJump) {
                     gpr.v0 = 0; // Allow jumping
                 }
+            });
+        }
+
+        if (config.finalResultsDoNotProceed) {
+            0x80109344.onExec({
+                if (data.currentScene != Scene.FINAL_RESULTS) return;
+                gpr.v0 = 0;
+            });
+        }
+
+        if (config.improveLastFiveTurnsBonus) {
+            0x80107260.onExec({ // Prevent Baby Bowser
+                if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
+                gpr.v0 = 1;
+            });
+
+            0x80106A80.onExec({ // Prevent Whomp
+                if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
+                gpr.v0 = 1;
+            });
+            
+            0x80106ED4.onExec({ // Choose prize amount
+                if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
+                lastFiveTurnsBonus = [10, 20, 30].choice(random);
+            });
+
+            0x80106EF4.onExecDone({ // Apply prize amount
+                if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
+                gpr.a1 = lastFiveTurnsBonus;
             });
         }
     }
