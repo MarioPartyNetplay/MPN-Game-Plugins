@@ -9,6 +9,7 @@ import std.json;
 import std.conv;
 import std.random;
 import std.stdio;
+import std.string;
 
 class PlayerConfig {
     Item[] items;
@@ -244,6 +245,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 }
 
 shared static this() {
+    name = "Mario Party 2".toStringz;
     pluginFactory = (name, hash) => new MarioParty2(name, hash);
 }
 

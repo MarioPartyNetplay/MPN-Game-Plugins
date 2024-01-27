@@ -6,6 +6,7 @@ import std.math;
 import std.stdio;
 import std.random;
 import std.range;
+import std.string;
 
 enum ClubType : uint {
     PUTTER = 0xD
@@ -141,5 +142,6 @@ class MarioGolf64 : Game!Config {
 }
 
 shared static this() {
+    name = "Mario Golf".toStringz;
     pluginFactory = (name, hash) => new MarioGolf64(name, hash);
 }

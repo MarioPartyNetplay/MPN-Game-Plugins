@@ -223,7 +223,7 @@ void freeTemp(uint ptr, void delegate() callback) {
 
 void showPlayerMessage(string message, byte character = -1) {
     message ~= '\x00';
-    gpr.sp -= cast(uint)(message.length + 0b11) & ~0b11;
+    gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
     *Ptr!uint(gpr.sp + 16) = 0;
@@ -233,7 +233,7 @@ void showPlayerMessage(string message, byte character = -1) {
         0x800EC9DC.jal({
             0x800EC6C8.jal({                       // CloseMessage
                 0x800EC6EC.jal({
-                    gpr.sp += 32 + (cast(uint)(message.length + 0b11) & ~0b11);
+                    gpr.sp += 32 + (cast(uint)(message.length + 0b111) & ~0b111);
                 });
             });
         });
@@ -242,7 +242,7 @@ void showPlayerMessage(string message, byte character = -1) {
 
 void showGlobalMessage(string message, byte character = -1) {
     message ~= '\x00';
-    gpr.sp -= cast(uint)(message.length + 0b11) & ~0b11;
+    gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
     *Ptr!uint(gpr.sp + 16) = 0;
@@ -252,7 +252,7 @@ void showGlobalMessage(string message, byte character = -1) {
         // 0x800ECA38?
         0x800EC6C8.jal({                           // CloseMessage
             0x800EC6EC.jal({
-                gpr.sp += 32 + (cast(uint)(message.length + 0b11) & ~0b11);
+                gpr.sp += 32 + (cast(uint)(message.length + 0b111) & ~0b111);
             });
         });
     });
@@ -271,6 +271,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
+
+        allocConsole();
     }
 
     void loadState() {
@@ -558,18 +560,15 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             bool resetLuckySpaces = state.luckySpaces.empty;
             ubyte[] bSpaces, lSpaces;
             
-            0x8003592C.onExecDone({ // Finish making temp heap
-                luckySpaceImagePtr = 0;
-                if (!isBoardScene()) return;
-
-                mallocTemp(LUCKY_SPACE_IMAGE.length + 0x10, (ptr) {
+            0x800354F8.onExecDone({ // Finish making perm heap
+                mallocPerm(LUCKY_SPACE_IMAGE.length + 0x10, (ptr) {
                     LUCKY_SPACE_IMAGE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
                     luckySpaceImagePtr = ptr;
                 });
             });
             data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onRead((ref Address ptr) {
                 if (!isBoardScene()) return;
-                if (*Ptr!uint(pc()) != 0x8C420000) return;
+                if (*Ptr!Instruction(pc()) != 0x8C420000) return;
                 
                 ptr = luckySpaceImagePtr;
             });
@@ -723,7 +722,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             
             0x80106ED4.onExec({ // Choose prize amount
                 if (data.currentScene != Scene.LAST_FIVE_TURNS) return;
-                lastFiveTurnsBonus = [10, 20, 30].choice(random);
+                lastFiveTurnsBonus = [10, 20, 20, 20, 30, 30].choice(random);
             });
 
             0x80106EF4.onExecDone({ // Apply prize amount
@@ -761,10 +760,26 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 }
             });
         }
+
+        /*
+        players[0].data.items[0].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[0].data.items[1].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[0].data.items[2].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[1].data.items[0].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[1].data.items[1].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[1].data.items[2].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[2].data.items[0].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[2].data.items[1].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[2].data.items[2].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[3].data.items[0].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[3].data.items[1].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        players[3].data.items[2].onWrite((ref Item item) { if (item == Item.WACKY_WATCH) item = Item.BARTER_BOX; });
+        */
     }
 }
 
 shared static this() {
+    name = "Mario Party 3".toStringz;
     pluginFactory = (name, hash) => new MarioParty3(name, hash);
 }
 
@@ -773,8 +788,27 @@ enum Char : ubyte {
     COLON = '\x7B'
 }
 
-enum Item : byte {
-    NONE = -1
+enum Item : ubyte {
+    NONE             = 0xFF,
+    MUSHROOM         = 0x00,
+    SKELETON_KEY     = 0x01,
+    POISON_MUSHROOM  = 0x02,
+    REVERSE_MUSHROOM = 0x03,
+    CELLULAR_SHOPPER = 0x04,
+    WARP_BLOCK       = 0x05,
+    PLUNDER_CHEST    = 0x06,
+    BOWSER_PHONE     = 0x07,
+    DUELING_GLOVE    = 0x08,
+    LUCKY_LAMP       = 0x09,
+    GOLDEN_MUSHROOM  = 0x0A,
+    BOO_BELL         = 0x0B,
+    BOO_REPELLANT    = 0x0C,
+    BOWSER_SUIT      = 0x0D,
+    MAGIC_LAMP       = 0x0E,
+    KOOPA_KARD       = 0x0F,
+    BARTER_BOX       = 0x10,
+    LUCKY_CHARM      = 0x11,
+    WACKY_WATCH      = 0x12
 }
 
 enum Scene : uint {

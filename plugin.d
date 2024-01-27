@@ -543,6 +543,7 @@ struct ExecutionInfo {
 }
 
 __gshared {
+    immutable(char)* name;
     Xoshiro256pp random;
 	HMODULE dll;
 	string dllPath;
@@ -572,7 +573,15 @@ extern (C) {
 
     export int PluginShutdown() { return 0; }
 
-    export int PluginGetVersion(int*, int*, int*, const char**, int*) { return 0; }
+    export int PluginGetVersion(int* pluginType, int* pluginVersion, int* apiVersion, immutable(char)** pluginNamePtr, int* pluginCapabilities) {
+        if (pluginType) *pluginType = 5;
+        if (pluginVersion) *pluginVersion = 0x020000;
+        if (apiVersion) *apiVersion = 0x020000;
+        if (pluginNamePtr) *pluginNamePtr = name;
+        if (pluginCapabilities) *pluginCapabilities = 0;
+
+        return 0;
+    }
 
     export void RomOpen() {
         
@@ -591,7 +600,6 @@ extern (C) {
 
     export void InitiateExecution(ExecutionInfo info) {
         try {
-            allocConsole();
             random.seed(0);
             window = info.window;
             addrMask = info.addrMask;
@@ -617,7 +625,6 @@ extern (C) {
                 string romName = info.romName.to!string().strip();
                 string romHash = info.romHash.to!string().strip();
                 plugin = pluginFactory(romName, romHash);
-                writeln("Plugin: ", romName);
 
                 try { plugin.onStart(); }
                 catch (Exception e) { handleException(e); }
