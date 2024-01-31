@@ -3,4 +3,8 @@
 *.bat
 *.exp
 *.lib
-/*.lnk
+*.lnk
+*.so
+*.sh
+*.o
+.directory

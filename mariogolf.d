@@ -141,7 +141,14 @@ class MarioGolf64 : Game!Config {
     }
 }
 
-shared static this() {
-    name = "Mario Golf".toStringz;
-    pluginFactory = (name, hash) => new MarioGolf64(name, hash);
+extern (C) {
+    string getName() {
+        return "Mario Golf";
+    }
+
+    int startup() {
+        pluginFactory = (name, hash) => new MarioGolf64(name, hash);
+
+        return 0;
+    }
 }

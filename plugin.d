@@ -15,8 +15,8 @@ import std.typecons;
 import std.math;
 import std.bitmanip;
 
-alias uint Address;
-alias uint Instruction;
+alias Address     = uint;
+alias Instruction = uint;
 
 enum Instruction NOP = 0;
 
@@ -409,14 +409,14 @@ abstract class Game(ConfigType) : Plugin {
 
     void loadConfig() {
         try {
-            config = readText(dllPath ~ romName ~ ".json").parseJSON().fromJSON!ConfigType();
+            config = readText(romName ~ ".json").parseJSON().fromJSON!ConfigType();
         } catch (FileException e) {
             config = new ConfigType;
         }
     }
 
     void saveConfig() {
-        std.file.write(dllPath ~ romName ~ ".json", config.toJSON().toPrettyString());
+        std.file.write(romName ~ ".json", config.toJSON().toPrettyString());
     }
 
     void onStart() { }
@@ -469,17 +469,19 @@ void onExecDoneOnce(Address address, void delegate() callback) {
     onExecDoneOnce(address, (Address) { callback(); });
 }
 
-void onRead(T)(ref T r, void delegate() callback)               { onRead!T(r, (ref T v, Address a) { callback(); }); }
-void onRead(T)(ref T r, void delegate(ref T) callback)          { onRead!T(r, (ref T v, Address a) { callback(v); }); }
-void onRead(T)(ref T r, void delegate(ref T, Address) callback) {
-    handlers!(T.sizeof).read[r.addr] ~= (v, a) { callback(*cast(T*)v, a); };
+void onRead(T)(ref T r, void delegate() callback)               { onRead!T(r, (ref T v, Address p, Address a) { callback(); }); }
+void onRead(T)(ref T r, void delegate(ref T) callback)          { onRead!T(r, (ref T v, Address p, Address a) { callback(v); }); }
+void onRead(T)(ref T r, void delegate(ref T, Address) callback) { onRead!T(r, (ref T v, Address p, Address a) { callback(v, p); }); }
+void onRead(T)(ref T r, void delegate(ref T, Address, Address) callback) {
+    handlers!(T.sizeof).read[r.addr] ~= (v, p, a) { callback(*cast(T*)v, p, a); };
     addAddress(r.addr);
 }
 
-void onWrite(T)(ref T r, void delegate() callback)               { onWrite(r, (ref T v, Address a) { callback(); }); }
-void onWrite(T)(ref T r, void delegate(ref T) callback)          { onWrite(r, (ref T v, Address a) { callback(v); }); }
-void onWrite(T)(ref T r, void delegate(ref T, Address) callback) {
-    handlers!(T.sizeof).write[r.addr] ~= (v, a) { callback(*cast(T*)v, a); };
+void onWrite(T)(ref T r, void delegate() callback)               { onWrite!T(r, (ref T v, Address p, Address a) { callback(); }); }
+void onWrite(T)(ref T r, void delegate(ref T) callback)          { onWrite!T(r, (ref T v, Address p, Address a) { callback(v); }); }
+void onWrite(T)(ref T r, void delegate(ref T, Address) callback) { onWrite!T(r, (ref T v, Address p, Address a) { callback(v, p); }); }
+void onWrite(T)(ref T r, void delegate(ref T, Address, Address) callback) {
+    handlers!(T.sizeof).write[r.addr] ~= (v, p, a) { callback(*cast(T*)v, p, a); };
     addAddress(r.addr);
 }
 
@@ -517,20 +519,24 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
 }
 
 void allocConsole() {
-    import core.stdc.stdio;
-    
-    AllocConsole();
-    freopen("CONIN$", "r", stdin);
-    freopen("CONOUT$", "w", stdout);
-    freopen("CONOUT$", "w", stderr);
+    version (Windows) {
+        import core.stdc.stdio;
+        
+        AllocConsole();
+        freopen("CONIN$", "r", stdin);
+        freopen("CONOUT$", "w", stdout);
+        freopen("CONOUT$", "w", stderr);
+    }
 }
 
 void handleException(Exception e) {
-    MessageBoxA(window, e.toString.toStringz, "Error", MB_OK);
+    version (Windows) {
+        MessageBoxA(window, e.toString.toStringz, "Error", MB_OK);
+    }
 }
 
 struct ExecutionInfo {
-    HWND window;
+    void* window;
     const char* romName;
     const char* romHash;
     ubyte* addrMask;
@@ -545,9 +551,8 @@ struct ExecutionInfo {
 __gshared {
     immutable(char)* name;
     Xoshiro256pp random;
-	HMODULE dll;
-	string dllPath;
-    HWND window;
+	void* dll;
+    void* window;
     Plugin plugin;
     ubyte* addrMask;
     uint function() pc;
@@ -563,13 +568,19 @@ __gshared {
     void delegate(Address)[][Address] executeDoneHandlers;
     void delegate(Address)[][Address] executeDoneOnceHandlers;
     template handlers(int S) {
-        void delegate(void*, Address)[][Address] read;
-        void delegate(void*, Address)[][Address] write;
+        void delegate(void*, Address, Address)[][Address] read;
+        void delegate(void*, Address, Address)[][Address] write;
     }
 }
 
 extern (C) {
-    export int PluginStartup(void*, void*, void*) { return 0; }
+    string getName();
+
+    int startup();
+    
+    export int PluginStartup(void*, void*, void*) {
+        return startup();
+    }
 
     export int PluginShutdown() { return 0; }
 
@@ -577,7 +588,10 @@ extern (C) {
         if (pluginType) *pluginType = 5;
         if (pluginVersion) *pluginVersion = 0x020000;
         if (apiVersion) *apiVersion = 0x020000;
-        if (pluginNamePtr) *pluginNamePtr = name;
+        if (pluginNamePtr) {
+            name = getName().toStringz;
+            *pluginNamePtr = name;
+        }
         if (pluginCapabilities) *pluginCapabilities = 0;
 
         return 0;
@@ -643,6 +657,11 @@ extern (C) {
             random.state[bit/64] ^= 1UL << (bit%64);
         }
         previous[port] = *input;
+
+        if (plugin) {
+            try { plugin.onInput(port, input); }
+            catch (Exception e) { handleException(e); }
+        }
     }
 
     export void Frame(uint f) {
@@ -656,96 +675,98 @@ extern (C) {
         frame++;
     }
 
-    export void Execute(Address address) {
-        if (auto handlers = (address in executeHandlers)) {
+    export void Execute(Address pc) {
+        if (auto handlers = (pc in executeHandlers)) {
             (*handlers).each!((h) {
-                try { h(address); }
+                try { h(pc); }
                 catch (Exception e) { handleException(e); }
             });
         }
         
-        if (auto handlers = (address in executeOnceHandlers)) {
-            executeOnceHandlers.remove(address);
+        if (auto handlers = (pc in executeOnceHandlers)) {
+            executeOnceHandlers.remove(pc);
             (*handlers).each!((h) {
-                try { h(address); }
+                try { h(pc); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    export void ExecuteDone(Address address) {
-        if (auto handlers = (address in executeDoneHandlers)) {
+    export void ExecuteDone(Address pc) {
+        if (auto handlers = (pc in executeDoneHandlers)) {
             (*handlers).each!((h) {
-                try { h(address); }
+                try { h(pc); }
                 catch (Exception e) { handleException(e); }
             });
         }
         
-        if (auto handlers = (address in executeDoneOnceHandlers)) {
-            executeOnceHandlers.remove(address);
+        if (auto handlers = (pc in executeDoneOnceHandlers)) {
+            executeOnceHandlers.remove(pc);
             (*handlers).each!((h) {
-                try { h(address); }
+                try { h(pc); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    void ReadHandler(int S)(void* value, Address addr) {
+    void ReadHandler(int S)(void* value, Address pc, Address addr) {
         if (auto handlers = (addr in handlers!(S).read)) {
             (*handlers).each!((h) {
-                try { h(value, addr); }
+                try { h(value, pc, addr); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    void WriteHandler(int S)(void* value, Address addr) {
+    void WriteHandler(int S)(void* value, Address pc, Address addr) {
         if (auto handlers = (addr in handlers!(S).write)) {
             (*handlers).each!((h) {
-                try { h(value, addr); }
+                try { h(value, pc, addr); }
                 catch (Exception e) { handleException(e); }
             });
         }
     }
 
-    export void Read8  (Address addr, ubyte  *value) { ReadHandler !1(value, addr); }
-    export void Read16 (Address addr, ushort *value) { ReadHandler !2(value, addr); }
-    export void Read32 (Address addr, uint   *value) { ReadHandler !4(value, addr); }
-    export void Read64 (Address addr, ulong  *value) { ReadHandler !8(value, addr); }
-    export void Write8 (Address addr, ubyte  *value) { WriteHandler!1(value, addr); }
-    export void Write16(Address addr, ushort *value) { WriteHandler!2(value, addr); }
-    export void Write32(Address addr, uint   *value) { WriteHandler!4(value, addr); }
-    export void Write64(Address addr, ulong  *value) { WriteHandler!8(value, addr); }
+    export void Read8  (ubyte  *value, Address pc, Address addr) { ReadHandler !1(value, pc, addr); }
+    export void Read16 (ushort *value, Address pc, Address addr) { ReadHandler !2(value, pc, addr); }
+    export void Read32 (uint   *value, Address pc, Address addr) { ReadHandler !4(value, pc, addr); }
+    export void Read64 (ulong  *value, Address pc, Address addr) { ReadHandler !8(value, pc, addr); }
+    export void Write8 (ubyte  *value, Address pc, Address addr) { WriteHandler!1(value, pc, addr); }
+    export void Write16(ushort *value, Address pc, Address addr) { WriteHandler!2(value, pc, addr); }
+    export void Write32(uint   *value, Address pc, Address addr) { WriteHandler!4(value, pc, addr); }
+    export void Write64(ulong  *value, Address pc, Address addr) { WriteHandler!8(value, pc, addr); }
 }
 
-extern (Windows)
-BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved) {
-    switch (ulReason) {
-        case DLL_PROCESS_ATTACH:
-			dll = hInstance;
-			
-			wchar[MAX_PATH] my_location_array;
-			GetModuleFileName(hInstance, my_location_array.ptr, MAX_PATH);
-			dllPath = my_location_array.ptr.fromStringz.text;
-			dllPath = dllPath[0 .. dllPath.lastIndexOf('\\') + 1];
-			
-            dll_process_attach(hInstance, true);
-            break;
+version (Windows) {
+    extern (Windows)
+    BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved) {
+        switch (ulReason) {
+            case DLL_PROCESS_ATTACH:
+                dll = hInstance;
+                
+                //wchar[MAX_PATH] my_location_array;
+                //GetModuleFileName(hInstance, my_location_array.ptr, MAX_PATH);
+                //dllPath = my_location_array.ptr.fromStringz.text;
+                //dllPath = dllPath[0 .. dllPath.lastIndexOf('\\') + 1];
+                
+                dll_process_attach(hInstance, true);
+                break;
 
-        case DLL_PROCESS_DETACH:			
-            dll_process_detach(hInstance, true);
-            break;
+            case DLL_PROCESS_DETACH:			
+                dll_process_detach(hInstance, true);
+                break;
 
-        case DLL_THREAD_ATTACH:
-            dll_thread_attach(true, true);
-            break;
+            case DLL_THREAD_ATTACH:
+                dll_thread_attach(true, true);
+                break;
 
-        case DLL_THREAD_DETACH:
-            dll_thread_detach(true, true);
-            break;
+            case DLL_THREAD_DETACH:
+                dll_thread_detach(true, true);
+                break;
 
-        default:
+            default:
+        }
+        
+        return true;
     }
-    
-    return true;
 }

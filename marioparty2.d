@@ -175,13 +175,13 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
         if (config.carryThreeItems) {
             players.each!((p) {
-                p.data.item.onRead((ref Item item, Address) {
+                p.data.item.onRead((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
                     if (p.config.items.empty) {
                         item = Item.NONE;
                     } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
                         item = Item.BOWSER_BOMB;
-                    } else if (itemsFull(p) || data.itemMenuOpen || pc() == 0x8005EEA8 /* Display Item Icon */) {
+                    } else if (itemsFull(p) || data.itemMenuOpen || pc == 0x8005EEA8 /* Display Item Icon */) {
                         item = p.config.items.back;
                     } else {
                         item = Item.NONE;
@@ -229,9 +229,9 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
         }
 
         if (config.randomBoardMiniGames) {
-            data.currentBoard.onRead((ref Board board, Address) {
+            data.currentBoard.onRead((ref Board board, Address pc) {
                 if (!isBoardScene()) return;
-                switch (pc()) {
+                switch (pc) {
                     case 0x80064574: // Duel Mini-Game
                     case 0x80066428: // Item Mini-Game
                         board = random.uniform!Board;
@@ -244,9 +244,16 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
     }
 }
 
-shared static this() {
-    name = "Mario Party 2".toStringz;
-    pluginFactory = (name, hash) => new MarioParty2(name, hash);
+extern (C) {
+    string getName() {
+        return "Mario Party 2";
+    }
+
+    int startup() {
+        pluginFactory = (name, hash) => new MarioParty2(name, hash);
+
+        return 0;
+    }
 }
 
 enum Board : ushort {
