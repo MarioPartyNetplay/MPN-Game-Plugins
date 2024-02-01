@@ -53,10 +53,10 @@ union Memory {
 }
 
 class Config {
-    bool expandMeetArea = true;
-    bool improveMaple = true;
-    bool imperfectCPUMeetArea = true;
-    bool autoSwing = true;
+    bool expandMeetArea = false;
+    bool improveMaple = false;
+    bool imperfectCPUMeetArea = false;
+    bool autoSwing = false;
 }
 
 class MarioGolf64 : Game!Config {

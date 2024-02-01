@@ -19,21 +19,21 @@ class PlayerConfig {
 }
 
 class MarioParty3Config : MarioPartyConfig {
-    bool randomBonus = true;
+    bool randomBonus = false;
     string[string] bonuses;
     int[string] teams;
-    bool replaceChanceSpaces = true;
+    bool replaceChanceSpaces = false;
     bool enhancedTaunts = false;
-    bool preventRepeatMiniGames = true;
+    bool preventRepeatMiniGames = false;
     bool randomChanceOrder = false;
-    bool finalTurnItems = true;
-    float luckySpaceRatio = 0.25;
+    bool finalTurnItems = false;
+    float luckySpaceRatio = 0.0;
     string[] blockedMiniGames;
-    bool doubleCoinMiniGames = true;
-    bool mpiqPermadeath = true;
-    bool finalResultsDoNotProceed = true;
-    bool improveLastFiveTurnsBonus = true;
-    bool singleUseBattleSpaces = true;
+    bool doubleCoinMiniGames = false;
+    bool mpiqPermadeath = false;
+    bool finalResultsDoNotProceed = false;
+    bool improveLastFiveTurnsBonus = false;
+    bool singleUseBattleSpaces = false;
     PlayerConfig[] players = [
         new PlayerConfig(),
         new PlayerConfig(),

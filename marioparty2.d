@@ -18,8 +18,8 @@ class PlayerConfig {
 }
 
 class MarioParty2Config : MarioPartyConfig {
-    bool carryThreeItems = true;
-    bool randomBoardMiniGames = true;
+    bool carryThreeItems = false;
+    bool randomBoardMiniGames = false;
     int[string] teams;
     PlayerConfig[] players = [
         new PlayerConfig(),
