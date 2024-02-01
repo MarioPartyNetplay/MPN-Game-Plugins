@@ -420,6 +420,7 @@ abstract class Game(ConfigType) : Plugin {
             config = readText(romName ~ ".json").parseJSON().fromJSON!ConfigType();
         } catch (FileException e) {
             config = new ConfigType;
+            saveConfig();
         }
     }
 
