@@ -527,14 +527,14 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
 }
 
 void info(T...)(T args) {
-    log(MSG_LEVEL.INFO, args);
+    msg(MSG_LEVEL.INFO, args);
 }
 
 void error(T...)(T args) {
-    log(MSG_LEVEL.ERROR, args);
+    msg(MSG_LEVEL.ERROR, args);
 }
 
-void log(T...)(MSG_LEVEL level, T args) {
+void msg(T...)(MSG_LEVEL level, T args) {
     if (!debugCallback || !debugContext) return;
 
     string message;
