@@ -226,9 +226,9 @@ void showPlayerMessage(string message, byte character = -1) {
     gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
-    *Ptr!uint(gpr.sp + 16) = 0;
-    *Ptr!uint(gpr.sp + 20) = 0;
-    *Ptr!uint(gpr.sp + 24) = 0;
+    (gpr.sp + 16).val!uint = 0;
+    (gpr.sp + 20).val!uint = 0;
+    (gpr.sp + 24).val!uint = 0;
     0x800EC8EC.jal(character, gpr.sp + 32, 0, 0, { // ShowPlayerMessage
         0x800EC9DC.jal({
             0x800EC6C8.jal({                       // CloseMessage
@@ -245,9 +245,9 @@ void showGlobalMessage(string message, byte character = -1) {
     gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
-    *Ptr!uint(gpr.sp + 16) = 0;
-    *Ptr!uint(gpr.sp + 20) = 0;
-    *Ptr!uint(gpr.sp + 24) = 0;
+    (gpr.sp + 16).val!uint = 0;
+    (gpr.sp + 20).val!uint = 0;
+    (gpr.sp + 24).val!uint = 0;
     0x800EC92C.jal(character, gpr.sp + 32, 0, 0, { // ShowGlobalMessage
         //0x800ECA38.jal({
             0x800EC6C8.jal({                       // CloseMessage
@@ -272,8 +272,6 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
-
-        allocConsole();
     }
 
     void loadState() {
@@ -427,7 +425,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINISH_BOARD) return;
                 bonus.partialShuffle(3, random);
-                writeln("Bonus Stars: ", bonus[0..3]);
+                info("Bonus Stars: ", bonus[0..3]);
             });
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
@@ -499,7 +497,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                         queue ~= SHUFFLE_MINI_GAMES;
                     }
                     auto game = queue.front.to!MiniGame;
-                    auto altCount = *Ptr!ubyte(0x80100E18 + gpr.s2) - 1;
+                    auto altCount = (0x80100E18 + gpr.s2).val!ubyte - 1;
                     auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
                     roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x800DF120.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
@@ -572,7 +570,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             });
             data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onRead((ref Address ptr, Address pc) {
                 if (!isBoardScene()) return;
-                if (*Ptr!Instruction(pc) != 0x8C420000) return;
+                if (pc.val!Instruction != 0x8C420000) return;
                 
                 ptr = luckySpaceImagePtr;
             });
@@ -656,9 +654,9 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             });
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINISH_BOARD) return;
-                writeln("Lucky Spaces:");
+                info("Lucky Spaces:");
                 state.luckySpaceCount.each!((i, count) {
-                    writefln("    %-8s %2d", data.players[i].character.to!string ~ ':', count);
+                    info(format("    %-8s %2d", data.players[i].character.to!string ~ ':', count));
                 });
             });
         }

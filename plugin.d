@@ -373,6 +373,14 @@ enum BUTTON : ushort {
     A   = 0x8000
 }
 
+enum MSG_LEVEL {
+    ERROR   = 1,
+    WARNING = 2,
+    INFO    = 3,
+    STATUS  = 4,
+    VERBOSE = 5
+}
+
 union InputData {
     struct {
         ushort buttons;
@@ -518,21 +526,23 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
     });
 }
 
-void allocConsole() {
-    version (Windows) {
-        import core.stdc.stdio;
-        
-        AllocConsole();
-        freopen("CONIN$", "r", stdin);
-        freopen("CONOUT$", "w", stdout);
-        freopen("CONOUT$", "w", stderr);
-    }
+void info(T...)(T args) {
+    log(MSG_LEVEL.INFO, args);
 }
 
-void handleException(Exception e) {
-    version (Windows) {
-        MessageBoxA(window, e.toString.toStringz, "Error", MB_OK);
+void error(T...)(T args) {
+    log(MSG_LEVEL.ERROR, args);
+}
+
+void log(T...)(MSG_LEVEL level, T args) {
+    if (!debugCallback || !debugContext) return;
+
+    string message;
+    foreach (arg; args) {
+        message ~= arg.to!string;
     }
+
+    debugCallback(debugContext, level, message.toStringz);
 }
 
 struct ExecutionInfo {
@@ -551,7 +561,6 @@ struct ExecutionInfo {
 __gshared {
     immutable(char)* name;
     Xoshiro256pp random;
-	void* dll;
     void* window;
     Plugin plugin;
     ubyte* addrMask;
@@ -574,11 +583,19 @@ __gshared {
 }
 
 extern (C) {
+    void* coreHandle;
+    void* debugContext;
+    void function(void*, int, immutable(char)*) debugCallback;
+
     string getName();
 
     int startup();
     
-    export int PluginStartup(void*, void*, void*) {
+    export int PluginStartup(void* handle, void* context, void function(void*, int, immutable(char)*) callback) {
+        coreHandle = handle;
+        debugContext = context;
+        debugCallback = callback;
+
         return startup();
     }
 
@@ -608,7 +625,7 @@ extern (C) {
                 plugin = null;
             }
         } catch (Exception e) {
-            handleException(e);
+            error(e);
         }
     }
 
@@ -641,12 +658,12 @@ extern (C) {
                 plugin = pluginFactory(romName, romHash);
 
                 try { plugin.onStart(); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             } else {
                 plugin = null;
             }
         } catch (Exception e) {
-            handleException(e);
+            error(e);
         }
     }
 
@@ -660,14 +677,14 @@ extern (C) {
 
         if (plugin) {
             try { plugin.onInput(port, input); }
-            catch (Exception e) { handleException(e); }
+            catch (Exception e) { error(e); }
         }
     }
 
     export void Frame(uint f) {
         if (plugin) {
             try { plugin.onFrame(frame); }
-            catch (Exception e) { handleException(e); }
+            catch (Exception e) { error(e); }
         }
 
         random.popFront();
@@ -679,7 +696,7 @@ extern (C) {
         if (auto handlers = (pc in executeHandlers)) {
             (*handlers).each!((h) {
                 try { h(pc); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
         
@@ -687,7 +704,7 @@ extern (C) {
             executeOnceHandlers.remove(pc);
             (*handlers).each!((h) {
                 try { h(pc); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
     }
@@ -696,7 +713,7 @@ extern (C) {
         if (auto handlers = (pc in executeDoneHandlers)) {
             (*handlers).each!((h) {
                 try { h(pc); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
         
@@ -704,7 +721,7 @@ extern (C) {
             executeOnceHandlers.remove(pc);
             (*handlers).each!((h) {
                 try { h(pc); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
     }
@@ -713,7 +730,7 @@ extern (C) {
         if (auto handlers = (addr in handlers!(S).read)) {
             (*handlers).each!((h) {
                 try { h(value, pc, addr); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
     }
@@ -722,19 +739,19 @@ extern (C) {
         if (auto handlers = (addr in handlers!(S).write)) {
             (*handlers).each!((h) {
                 try { h(value, pc, addr); }
-                catch (Exception e) { handleException(e); }
+                catch (Exception e) { error(e); }
             });
         }
     }
 
-    export void Read8  (ubyte  *value, Address pc, Address addr) { ReadHandler !1(value, pc, addr); }
-    export void Read16 (ushort *value, Address pc, Address addr) { ReadHandler !2(value, pc, addr); }
-    export void Read32 (uint   *value, Address pc, Address addr) { ReadHandler !4(value, pc, addr); }
-    export void Read64 (ulong  *value, Address pc, Address addr) { ReadHandler !8(value, pc, addr); }
-    export void Write8 (ubyte  *value, Address pc, Address addr) { WriteHandler!1(value, pc, addr); }
-    export void Write16(ushort *value, Address pc, Address addr) { WriteHandler!2(value, pc, addr); }
-    export void Write32(uint   *value, Address pc, Address addr) { WriteHandler!4(value, pc, addr); }
-    export void Write64(ulong  *value, Address pc, Address addr) { WriteHandler!8(value, pc, addr); }
+    export void Read8  (ubyte*  value, Address pc, Address addr) { ReadHandler !1(value, pc, addr); }
+    export void Read16 (ushort* value, Address pc, Address addr) { ReadHandler !2(value, pc, addr); }
+    export void Read32 (uint*   value, Address pc, Address addr) { ReadHandler !4(value, pc, addr); }
+    export void Read64 (ulong*  value, Address pc, Address addr) { ReadHandler !8(value, pc, addr); }
+    export void Write8 (ubyte*  value, Address pc, Address addr) { WriteHandler!1(value, pc, addr); }
+    export void Write16(ushort* value, Address pc, Address addr) { WriteHandler!2(value, pc, addr); }
+    export void Write32(uint*   value, Address pc, Address addr) { WriteHandler!4(value, pc, addr); }
+    export void Write64(ulong*  value, Address pc, Address addr) { WriteHandler!8(value, pc, addr); }
 }
 
 version (Windows) {
@@ -742,13 +759,6 @@ version (Windows) {
     BOOL DllMain(HINSTANCE hInstance, ULONG ulReason, LPVOID pvReserved) {
         switch (ulReason) {
             case DLL_PROCESS_ATTACH:
-                dll = hInstance;
-                
-                //wchar[MAX_PATH] my_location_array;
-                //GetModuleFileName(hInstance, my_location_array.ptr, MAX_PATH);
-                //dllPath = my_location_array.ptr.fromStringz.text;
-                //dllPath = dllPath[0 .. dllPath.lastIndexOf('\\') + 1];
-                
                 dll_process_attach(hInstance, true);
                 break;
 
