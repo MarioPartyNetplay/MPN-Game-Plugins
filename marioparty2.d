@@ -85,6 +85,7 @@ union Memory {
     mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
     mixin Field!(0x80018B28, Instruction, "randomByteRoutine");
     mixin Field!(0x8004DE7C, Instruction, "openItemMenuRoutine");
+    mixin Field!(0x800DF724, Ptr!Instruction, "plunderChestRoutinePtr");
     mixin Field!(0x800F93AA, Board, "currentBoard");
     mixin Field!(0x800E18D4, Ptr!Space, "spaceData");
     mixin Field!(0x800E18D8, Ptr!Chain, "chainData");
@@ -179,10 +180,14 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                     if (!isBoardScene()) return;
                     if (p.config.items.empty) {
                         item = Item.NONE;
+                    } else if (pc == data.plunderChestRoutinePtr  + 0x354) { // Item being stolen by plunder
+                        auto i = uniform(0, p.config.items.length, random);
+                        item = p.config.items[i];
+                        p.config.items = item ~ p.config.items.remove(i);
                     } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
                         item = Item.BOWSER_BOMB;
                     } else if (itemsFull(p) || data.itemMenuOpen || pc == 0x8005EEA8 /* Display Item Icon */) {
-                        item = p.config.items.back;
+                        item = p.config.items.front;
                     } else {
                         item = Item.NONE;
                     }
@@ -193,7 +198,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                     }
                 });
 
-                p.data.item.onWrite((ref Item item) {
+                p.data.item.onWrite((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
                     if (item == Item.NONE) {
                         if (p.config.items.empty) return;
@@ -202,17 +207,22 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                                 auto i = p.config.items.countUntil(Item.SKELETON_KEY);
                                 if (i >= 0) p.config.items = p.config.items.remove(i);
                             } else {
-                                p.config.items.popBack();
+                                p.config.items.popFront();
                             }
                         } else {
-                            p.config.items.popBack();
+                            p.config.items.popFront();
                         }
                     } else {
+                        if (pc == data.plunderChestRoutinePtr + 0x360) { // Item retrieved by plunder
+                            auto i = p.config.items.countUntil(Item.PLUNDER_CHEST);
+                            if (i >= 0) p.config.items[i] = item;
+                            return;
+                        }
                         if (itemsFull(p)) return;
                         if (item == Item.BOWSER_BOMB && p.config.items.canFind(Item.BOWSER_BOMB)) return;
-                        p.config.items ~= item;
+                        p.config.items = item ~ p.config.items;
                     }
-                    item = p.config.items.empty ? Item.NONE : p.config.items.back;
+                    item = p.config.items.empty ? Item.NONE : p.config.items.front;
                     saveConfig();
                 });
             });
@@ -221,9 +231,9 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                 if (!isBoardScene()) return;
                 if (currentPlayer is null) return;
                 if (currentPlayer.config.items.length <= 1) return;
-                if (currentPlayer.config.items.back == Item.BOWSER_BOMB) return;
-                currentPlayer.config.items = currentPlayer.config.items.back ~ currentPlayer.config.items[0..$-1];
-                currentPlayer.data.item = currentPlayer.config.items.back;
+                if (currentPlayer.config.items.front == Item.BOWSER_BOMB) return;
+                currentPlayer.config.items = currentPlayer.config.items[1..$] ~ currentPlayer.config.items.front;
+                currentPlayer.data.item = currentPlayer.config.items.front;
                 saveConfig();
             });
         }
