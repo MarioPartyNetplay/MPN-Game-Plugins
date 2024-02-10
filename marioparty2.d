@@ -192,7 +192,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                         item = Item.NONE;
                     }
                     if (auto space = getSpace(p)) {
-                        if (space.type == Space.Type.INTERSECTION && p.config.items.canFind(Item.SKELETON_KEY)) {
+                        if ((space.type == Space.Type.INTERSECTION || space.type == Space.Type.EMPTY) && p.config.items.canFind(Item.SKELETON_KEY)) {
                             item = Item.SKELETON_KEY;
                         }
                     }
@@ -203,7 +203,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                     if (item == Item.NONE) {
                         if (p.config.items.empty) return;
                         if (auto space = getSpace(p)) {
-                            if (space.type == Space.Type.INTERSECTION) {
+                            if (space.type == Space.Type.INTERSECTION || space.type == Space.Type.EMPTY) {
                                 auto i = p.config.items.countUntil(Item.SKELETON_KEY);
                                 if (i >= 0) p.config.items = p.config.items.remove(i);
                             } else {
