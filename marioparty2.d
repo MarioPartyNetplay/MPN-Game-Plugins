@@ -206,7 +206,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                             if (space.type == Space.Type.INTERSECTION || space.type == Space.Type.EMPTY) {
                                 auto i = p.config.items.countUntil(Item.SKELETON_KEY);
                                 if (i >= 0) p.config.items = p.config.items.remove(i);
-                            } else {
+                            } else if (space.type != Space.Type.ITEM) {
                                 p.config.items.popFront();
                             }
                         } else {
