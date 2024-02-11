@@ -178,36 +178,41 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
             players.each!((p) {
                 p.data.item.onWrite((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
-
                     //writeln(pc.to!string(16), ": P", p.index, " Write");
 
-                    if (data.itemMenuOpen) return;
-                    if (item == Item.NONE) return;
+                    if (data.itemMenuOpen) {
+                        if (item == Item.NONE) {
+                            if (!p.config.items.empty) {
+                                p.config.items.popFront();
+                            }
+                        } else if (p.config.items.empty) {
+                            p.config.items ~= item;
+                        } else {
+                            p.config.items[0] = item;
+                        }
+                    } else if (item != Item.NONE) {
+                        p.config.items ~= item;
+                    }
 
-                    p.config.items ~= item;
-                    item = item.NONE;
                     saveConfig();
+
+                    item = item.NONE;
                 });
 
                 p.data.item.onRead((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
-
                     //if (pc != 0x8005EEA8) writeln(pc.to!string(16), ": P", p.index, " Read");
-
-                    if (pc == data.plunderChestRoutinePtr  + 0x354) { // Item being stolen by plunder
-                        if (p.data.item != Item.NONE) {
-                            p.config.items ~= p.data.item;
-                        }
-                        auto i = uniform(0, p.config.items.length, random);
-                        item = p.data.item = p.config.items[i];
-                        p.config.items = p.config.items.remove(i);
-                        saveConfig();
-                        return;
-                    }
-
-                    if (data.itemMenuOpen) return;
                     if (item != Item.NONE) return;
                     if (p.config.items.empty) return;
+
+                    if (pc == data.plunderChestRoutinePtr + 0x354) {
+                        p.config.items.partialShuffle(1, random); // Randomize item being plundered
+                    }
+
+                    if (data.itemMenuOpen) {
+                        item = p.config.items.front;
+                        return;
+                    }
 
                     if ((pc + 4).val!Instruction == 0x24020001) { // ADDIU V0, R0, 0x0001 (Checking if item is key (hopefully))
                         auto i = p.config.items.countUntil(Item.SKELETON_KEY);
@@ -219,12 +224,13 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                         }
                     }
 
-                    if (itemsFull(p) || pc == 0x8005EEA8) { // pc == Display Icon
-                        if (p.config.items.canFind(Item.BOWSER_BOMB)) {
-                            item = Item.BOWSER_BOMB;
-                        } else {
-                            item = p.config.items.front;
-                        }
+                    if (pc == 0x8004E984) { // Check for Bowser Bomb
+                        item = p.config.items.canFind(Item.BOWSER_BOMB) ? Item.BOWSER_BOMB : Item.NONE;
+                        return;
+                    }
+
+                    if (itemsFull(p) || pc == 0x8005EEA8) { // pc == Display Icon on Panel
+                        item = p.config.items.front;
                     }
                 });
             });
@@ -232,20 +238,12 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
             data.itemMenuOpen.onWrite((ref byte isOpen) {
                 if (!isBoardScene()) return;
 
-                if (isOpen) {
+                if (data.itemMenuOpen && !isOpen) {
                     players.each!((p) {
-                        if (p.config.items.empty) return;
-                        if (p.data.item != Item.NONE) return;
+                        if (p.config.items.length <= 1) return;
 
-                        p.data.item = p.config.items.front;
+                        p.config.items ~= p.config.items.front;
                         p.config.items.popFront();
-                    });
-                } else {
-                    players.each!((p) {
-                        if (p.data.item == Item.NONE) return;
-
-                        p.config.items ~= p.data.item;
-                        p.data.item = Item.NONE;
                     });
                 }
 
@@ -254,7 +252,6 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
             0x8005600C.onExec({ // Executes after declining to use key
                 if (!isBoardScene()) return;
-                if (data.itemMenuOpen) return;
 
                 players.each!((p) {
                     if (p.data.item == Item.NONE) return;
@@ -265,7 +262,7 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
                 });
             });
 
-            0x80066614.onExec({ // Check for Bowser Bomb
+            0x8006661C.onExec({ // Clear Bowser Bombs
                 if (!isBoardScene()) return;
 
                 bool found = false;
