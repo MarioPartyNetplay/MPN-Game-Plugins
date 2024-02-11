@@ -176,65 +176,110 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
 
         if (config.carryThreeItems) {
             players.each!((p) {
+                p.data.item.onWrite((ref Item item, Address pc) {
+                    if (!isBoardScene()) return;
+
+                    //writeln(pc.to!string(16), ": P", p.index, " Write");
+
+                    if (data.itemMenuOpen) return;
+                    if (item == Item.NONE) return;
+
+                    p.config.items ~= item;
+                    item = item.NONE;
+                    saveConfig();
+                });
+
                 p.data.item.onRead((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
-                    if (p.config.items.empty) {
-                        item = Item.NONE;
-                    } else if (pc == data.plunderChestRoutinePtr  + 0x354) { // Item being stolen by plunder
+
+                    //if (pc != 0x8005EEA8) writeln(pc.to!string(16), ": P", p.index, " Read");
+
+                    if (pc == data.plunderChestRoutinePtr  + 0x354) { // Item being stolen by plunder
+                        if (p.data.item != Item.NONE) {
+                            p.config.items ~= p.data.item;
+                        }
                         auto i = uniform(0, p.config.items.length, random);
-                        item = p.config.items[i];
-                        p.config.items = item ~ p.config.items.remove(i);
-                    } else if (p.config.items.canFind(Item.BOWSER_BOMB)) {
-                        item = Item.BOWSER_BOMB;
-                    } else if (itemsFull(p) || data.itemMenuOpen || pc == 0x8005EEA8 /* Display Item Icon */) {
-                        item = p.config.items.front;
-                    } else {
-                        item = Item.NONE;
+                        item = p.data.item = p.config.items[i];
+                        p.config.items = p.config.items.remove(i);
+                        saveConfig();
+                        return;
                     }
-                    if (auto space = getSpace(p)) {
-                        if ((space.type == Space.Type.INTERSECTION || space.type == Space.Type.EMPTY) && p.config.items.canFind(Item.SKELETON_KEY)) {
-                            item = Item.SKELETON_KEY;
+
+                    if (data.itemMenuOpen) return;
+                    if (item != Item.NONE) return;
+                    if (p.config.items.empty) return;
+
+                    if ((pc + 4).val!Instruction == 0x24020001) { // ADDIU V0, R0, 0x0001 (Checking if item is key (hopefully))
+                        auto i = p.config.items.countUntil(Item.SKELETON_KEY);
+                        if (i >= 0) {
+                            item = p.data.item = Item.SKELETON_KEY;
+                            p.config.items = p.config.items.remove(i);
+                            saveConfig();
+                            return;
+                        }
+                    }
+
+                    if (itemsFull(p) || pc == 0x8005EEA8) { // pc == Display Icon
+                        if (p.config.items.canFind(Item.BOWSER_BOMB)) {
+                            item = Item.BOWSER_BOMB;
+                        } else {
+                            item = p.config.items.front;
                         }
                     }
                 });
+            });
 
-                p.data.item.onWrite((ref Item item, Address pc) {
-                    if (!isBoardScene()) return;
-                    if (item == Item.NONE) {
+            data.itemMenuOpen.onWrite((ref byte isOpen) {
+                if (!isBoardScene()) return;
+
+                if (isOpen) {
+                    players.each!((p) {
                         if (p.config.items.empty) return;
-                        if (auto space = getSpace(p)) {
-                            if (space.type == Space.Type.INTERSECTION || space.type == Space.Type.EMPTY) {
-                                auto i = p.config.items.countUntil(Item.SKELETON_KEY);
-                                if (i >= 0) p.config.items = p.config.items.remove(i);
-                            } else if (space.type != Space.Type.ITEM) {
-                                p.config.items.popFront();
-                            }
-                        } else {
-                            p.config.items.popFront();
-                        }
-                    } else {
-                        if (pc == data.plunderChestRoutinePtr + 0x360) { // Item retrieved by plunder
-                            auto i = p.config.items.countUntil(Item.PLUNDER_CHEST);
-                            if (i >= 0) p.config.items[i] = item;
-                            return;
-                        }
-                        if (itemsFull(p)) return;
-                        if (item == Item.BOWSER_BOMB && p.config.items.canFind(Item.BOWSER_BOMB)) return;
-                        p.config.items = item ~ p.config.items;
-                    }
-                    item = p.config.items.empty ? Item.NONE : p.config.items.front;
+                        if (p.data.item != Item.NONE) return;
+
+                        p.data.item = p.config.items.front;
+                        p.config.items.popFront();
+                    });
+                } else {
+                    players.each!((p) {
+                        if (p.data.item == Item.NONE) return;
+
+                        p.config.items ~= p.data.item;
+                        p.data.item = Item.NONE;
+                    });
+                }
+
+                saveConfig();
+            });
+
+            0x8005600C.onExec({ // Executes after declining to use key
+                if (!isBoardScene()) return;
+                if (data.itemMenuOpen) return;
+
+                players.each!((p) {
+                    if (p.data.item == Item.NONE) return;
+
+                    p.config.items ~= p.data.item; // Move key back
+                    p.data.item = Item.NONE;
                     saveConfig();
                 });
             });
 
-            data.openItemMenuRoutine.addr.onExec({
+            0x80066614.onExec({ // Check for Bowser Bomb
                 if (!isBoardScene()) return;
-                if (currentPlayer is null) return;
-                if (currentPlayer.config.items.length <= 1) return;
-                if (currentPlayer.config.items.front == Item.BOWSER_BOMB) return;
-                currentPlayer.config.items = currentPlayer.config.items[1..$] ~ currentPlayer.config.items.front;
-                currentPlayer.data.item = currentPlayer.config.items.front;
-                saveConfig();
+
+                bool found = false;
+                players.each!((p) {
+                    ptrdiff_t i;
+                    while ((i = p.config.items.countUntil(Item.BOWSER_BOMB)) >= 0) {
+                        p.config.items = p.config.items.remove(i);
+                        saveConfig();
+
+                        if (found) continue;
+                        p.data.item = Item.BOWSER_BOMB;
+                        found = true;
+                    }
+                });
             });
         }
 
