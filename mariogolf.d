@@ -36,7 +36,7 @@ union Club {
 }
 
 union Memory {
-    ubyte[0x400000] ram;
+    ubyte[0x800000] ram;
     mixin Field!(0x800BB264, Arr!(Club, 192), "clubs");
     mixin Field!(0x801B71EC, Arr!(Player, 4), "players");
     mixin Field!(0x800B67F0, uint, "time");

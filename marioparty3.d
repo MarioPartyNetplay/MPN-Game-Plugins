@@ -66,7 +66,7 @@ class State {
 }
 
 union Memory {
-    ubyte[0x400000] memory;
+    ubyte[0x800000] ram;
     mixin Field!(0x800D1108, Arr!(Player, 4), "players");
     mixin Field!(0x800CE200, Scene, "currentScene");
     mixin Field!(0x800CD05A, ubyte, "totalTurns");
@@ -119,7 +119,7 @@ union Player {
     mixin Field!(0x0E, ubyte, "stars");
     mixin Field!(0x17, ubyte, "directionFlags");
     mixin Field!(0x18, Arr!(Item, 3), "items");
-    mixin Field!(0x1C, Color, "color");
+    mixin Field!(0x1C, PanelColor, "color");
     mixin Field!(0x28, ushort, "miniGameCoins");
     mixin Field!(0x2A, ushort, "maxCoins");
     mixin Field!(0x2C, ubyte, "happeningSpaces");
@@ -471,8 +471,8 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (gpr.s0 == 0) {
                     auto type = (cast(MiniGame)gpr.v0).type;
                     auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
-                    auto queue = state.miniGameQueue.require(type, list.filter!(g => !config.blockedMiniGames.canFind(g))
-                                                                       .array.randomShuffle(random) ~ MiniGame._SHUFFLE);
+                    auto queue = state.miniGameQueue.require(type, list.array.randomShuffle(random) ~ MiniGame._SHUFFLE)
+                                                    .remove!(g => config.blockedMiniGames.canFind(g));
                     if (queue.front == MiniGame._SHUFFLE) {
                         queue.popFront();
                         queue.distanceShuffleUniform((queue.length-1)/2, random);

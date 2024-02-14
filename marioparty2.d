@@ -69,7 +69,7 @@ union Player {
     mixin Field!(0x10, ushort, "chain");
     mixin Field!(0x12, ushort, "space");
     mixin Field!(0x19, Item, "item");
-    mixin Field!(0x1B, Color, "color");
+    mixin Field!(0x1B, PanelColor, "color");
     mixin Field!(0x28, ushort, "gameCoins");
     mixin Field!(0x2A, ushort, "maxCoins");
     mixin Field!(0x2D, ubyte, "redSpaces");
@@ -77,7 +77,7 @@ union Player {
 }
 
 union Memory {
-    ubyte[0x400000] ram;
+    ubyte[0x800000] ram;
     mixin Field!(0x800FD2C0, Arr!(Player, 4), "players");
     mixin Field!(0x800FA63C, Scene, "currentScene");
     mixin Field!(0x800F93AE, ushort, "totalTurns");

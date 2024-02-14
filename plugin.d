@@ -556,10 +556,12 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
 
 void info(T...)(T args) {
     msg(MSG_LEVEL.INFO, args);
+    stdout.writeln(args);
 }
 
 void error(T...)(T args) {
     msg(MSG_LEVEL.ERROR, args);
+    stderr.writeln(args);
 }
 
 void msg(T...)(MSG_LEVEL level, T args) {

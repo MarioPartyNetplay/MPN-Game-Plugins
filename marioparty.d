@@ -9,7 +9,7 @@ import std.traits;
 import std.stdio;
 import std.conv;
 
-enum Color : ubyte {
+enum PanelColor : ubyte {
     CLEAR = 0,
     BLUE  = 1,
     RED   = 2,
@@ -89,15 +89,6 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
     bool isBoardScene() const { return isBoardScene(data.currentScene); }
     bool isScoreScene() const { return isScoreScene(data.currentScene); }
 
-    /*
-    void updateTeams() {
-        players.dup.sort!(
-            (a, b) => (a.isCPU ? 4 : a.data.controller) < (b.isCPU ? 4 : b.data.controller),
-            SwapStrategy.stable
-        ).each!((i, p) { p.config = config.players[i]; });
-    }
-    */
-
     auto team(const Player p) const {
         return teams[p.data.character];
     }
@@ -118,10 +109,9 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
         super.onStart();
 
         data.currentScene.onWrite((ref Scene scene) {
-            if (scene != data.currentScene) {
-                //info("Scene: ", scene);
-                //writeln("Scene: ", scene);
-            }
+            if (scene == data.currentScene) return;
+
+            //info("Scene: ", scene);
         });
 
         static if (is(typeof(data.randomByteRoutine))) {
@@ -131,18 +121,6 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
         }
 
         if (config.teamMode) {
-            /*
-            if (isBoardScene()) {
-                updateTeams();
-            }
-
-            data.currentScene.onWrite((ref Scene scene) {
-                if (isBoardScene(scene)) {
-                    updateTeams();
-                }
-            });
-            */
-            
             players.each!((p) {
                 p.data.coins.onWrite((ref ushort coins) {
                     if (!isScoreScene()) return;
@@ -166,9 +144,9 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
                     }
                 });
                 /*
-                p.data.color.onWrite((ref Color color) {
+                p.data.color.onWrite((ref PanelColor color) {
                     if (!isBoardScene()) return;
-                    if (color == Color.CLEAR) return;
+                    if (color == PanelColor.CLEAR) return;
                     auto t = teammates(p).find!(t => t.index < p.index);
                     if (!t.empty) {
                         color = t.front.data.color;
@@ -179,13 +157,11 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
                     if (!isBoardScene()) return;
                     if (p.data.flags == flags) return;
                     p.data.flags = flags;
-                    //updateTeams();
                 });
                 p.data.controller.onWrite((ref ubyte controller) {
                     if (!isBoardScene()) return;
                     if (p.data.controller == controller) return;
                     p.data.controller = controller;
-                    //updateTeams();
                 });
             });
 
@@ -193,7 +169,7 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
             static if (is(typeof(data.playerPanels)) && is(typeof(data.drawPlayerColor))) {
                 data.drawPlayerColor.addr.onExec({
                     if (!isBoardScene()) return;
-                    if (gpr.a1 == Color.CLEAR) return;
+                    if (gpr.a1 == PanelColor.CLEAR) return;
                     auto p = players[gpr.a0];
                     auto t = teammates(p).find!(t => t.index < p.index);
                     if (!t.empty) {
@@ -213,7 +189,7 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
                     if (!allTeamsSplit) return;
                     
                     players.each!((i, p) {
-                        data.playerPanels[i].color = (team(p) == team(players[0]) ? Color.BLUE : Color.RED);
+                        data.playerPanels[i].color = (team(p) == team(players[0]) ? PanelColor.BLUE : PanelColor.RED);
                     });
                 });
             }
