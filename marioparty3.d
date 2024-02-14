@@ -12,11 +12,10 @@ import std.string;
 import std.file;
 import std.json;
 
-class PlayerConfig {
-
-}
-
-class MarioParty3Config : MarioPartyConfig {
+class Config {
+    bool alwaysDuel = false;
+    bool lastPlaceDoubleRoll = false;
+    bool teamMode = false;
     bool randomBonus = false;
     string[BonusType] bonuses;
     int[Character] teams;
@@ -32,12 +31,6 @@ class MarioParty3Config : MarioPartyConfig {
     bool finalResultsDoNotProceed = false;
     bool improveLastFiveTurnsBonus = false;
     bool singleUseBattleSpaces = false;
-    PlayerConfig[] players = [
-        new PlayerConfig(),
-        new PlayerConfig(),
-        new PlayerConfig(),
-        new PlayerConfig()
-    ];
 
     this() {
         bonuses = [
@@ -53,24 +46,26 @@ class MarioParty3Config : MarioPartyConfig {
             BonusType.BANK:      "Banking",
             BonusType.GAME_GUY:  "Gambling"
         ];
-
-        teams = [
-            Character.MARIO: 1,
-            Character.LUIGI: 1,
-            Character.PEACH: 2,
-            Character.YOSHI: 2
-        ];
     }
 }
 
-class StateConfig {
+class PlayerState {
+    int luckySpaceCount = 0;
+}
+
+class State {
+    PlayerState[] players = [
+        new PlayerState(),
+        new PlayerState(),
+        new PlayerState(),
+        new PlayerState()
+    ];
     MiniGame[][MiniGameType] miniGameQueue;
     ubyte[] luckySpaces;
-    int[] luckySpaceCount = [0, 0, 0, 0];
     ubyte[] usedBattleSpaces;
 }
 
-union Data {
+union Memory {
     ubyte[0x400000] memory;
     mixin Field!(0x800D1108, Arr!(Player, 4), "players");
     mixin Field!(0x800CE200, Scene, "currentScene");
@@ -257,41 +252,22 @@ void showGlobalMessage(string message, byte character = -1) {
     });
 }
 
-class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
-    StateConfig state;
+class MarioParty3 : MarioParty!(Config, State, Memory) {
     string gameText;
     BonusType[] bonus;
     int lastFiveTurnsBonus = 20;
 
     this(string name, string hash) {
         super(name, hash);
+    }
+
+    override void loadConfig() {
+        super.loadConfig();
 
         bonus = config.bonuses.keys;
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
-    }
-
-    void loadState() {
-        try {
-            state = readText(romName ~ "-State.json").parseJSON().fromJSON!StateConfig();
-        } catch (FileException e) {
-            state = new StateConfig;
-        }
-    }
-
-    void saveState() {
-        std.file.write(romName ~ "-State.json", state.toJSON().toPrettyString());
-    }
-
-    override void loadConfig() {
-        super.loadConfig();
-        loadState();
-    }
-
-    override void saveConfig() {
-        super.saveConfig();
-        saveState();
     }
 
     override bool lockTeams() const {
@@ -347,6 +323,20 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
 
     override void onStart() {
         super.onStart();
+
+        /*
+        bool[uint] seen;
+        0x800843F0.onExec({
+            if (gpr.a0 !in seen) {
+                writeln((cast(uint)gpr.a0).to!string(16), " ", (cast(uint)gpr.a1).to!string(16), " ", (cast(uint)gpr.a2).to!string(16), " ", (cast(uint)gpr.a3).to!string(16));
+                seen[gpr.a0] = true;
+            }
+
+            if (gpr.a0 == 0x801D73D0) return;
+
+            gpr.a0 = gpr.a1 = 0x80240340;
+        });
+        */
 
         data.textLength.addr.onExec({
             auto c = Ptr!char(gpr.s0 + 2);
@@ -465,16 +455,11 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
         }
 
         if (config.preventRepeatMiniGames || config.blockedMiniGames.length > 0) {
-            data.currentTurn.onWrite((ref ubyte turn) {
-                if (data.currentScene != Scene.TRANSITION) return;
-                if (turn != 1) return;
-
-                foreach (ref queue; state.miniGameQueue.byValue()) {
-                    queue = queue.remove!(e => e == MiniGame._SHUFFLE);
-                    queue.distanceShuffleUniform((queue.length-1)/2, random);
-                    queue ~= MiniGame._SHUFFLE;
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.START_BOARD) {
+                    state.miniGameQueue.clear();
+                    saveState();
                 }
-                saveState();
             });
             // Populate mini-game roulette
             0x800DFE90.onExec({
@@ -489,7 +474,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     auto queue = state.miniGameQueue.require(type, list.filter!(g => !config.blockedMiniGames.canFind(g))
                                                                        .array.randomShuffle(random) ~ MiniGame._SHUFFLE);
                     if (queue.front == MiniGame._SHUFFLE) {
-                        queue = queue[1..$];
+                        queue.popFront();
                         queue.distanceShuffleUniform((queue.length-1)/2, random);
                         queue ~= MiniGame._SHUFFLE;
                     }
@@ -579,7 +564,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
             data.currentScene.onWrite((ref Scene scene) { // Reset lucky spaces at start of game
                 if (scene == Scene.START_BOARD) {
                     state.luckySpaces.length = 0;
-                    state.luckySpaceCount = [0, 0, 0, 0];
+                    state.players.each!(p => p.luckySpaceCount = 0);
                     resetLuckySpaces = true;
                     saveState();
                 }
@@ -630,7 +615,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     gpr.v0 = Space.Type.ITEM; // 1 in 3 chance of item event on lucky space 
                 }
 
-                state.luckySpaceCount[data.currentPlayerIndex]++;
+                currentPlayer.state.luckySpaceCount++;
                 saveState();
             });
             data.blueOrRedSpaceCoins.addr.onExec({ // Give extra coins on lucky space
@@ -655,7 +640,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 players.dup.sort!((p, q) => p.data.coins > q.data.coins, SwapStrategy.stable)
                            .sort!((p, q) => p.data.stars > q.data.stars, SwapStrategy.stable)
                            .each!((p) {
-                    info(format("    %-8s %2d", p.data.character.to!string ~ ":", state.luckySpaceCount[p.index]));
+                    info(format("    %-8s %2d", p.data.character.to!string ~ ":", p.state.luckySpaceCount));
                 });
             });
         }

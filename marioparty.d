@@ -27,48 +27,55 @@ enum Character : ubyte {
     DAISY   = 7
 }
 
-class MarioPartyConfig {
-    bool alwaysDuel = false;
-    bool lastPlaceDoubleRoll = false;
-    bool teamMode = false;
-}
-
-class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
+class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateType) {
     alias typeof(MemoryType.currentScene) Scene;
     alias typeof(MemoryType.players.front) PlayerData;
-    alias typeof(ConfigType.players.front) PlayerConfig;
+    alias typeof(StateType.players.front) PlayerState;
 
     class Player {
         const uint index;
         PlayerData* data;
-        PlayerConfig config;
+        PlayerState state;
 
-        this(uint index, ref PlayerData data, PlayerConfig config) {
+        this(uint index, ref PlayerData data) {
             this.index = index;
             this.data = &data;
-            this.config = config;
         }
-        @property bool isCPU() const { return data.flags & 1; }
-        bool isAheadOf(const Player o) const { return data.stars > o.data.stars || data.stars == o.data.stars && data.coins > o.data.coins; }
+
+        @property bool isCPU() const {
+            return data.flags & 0b00000001;
+        }
+
+        bool isAheadOf(const Player o) const {
+            if (data.stars == o.data.stars) {
+                return data.coins > o.data.coins;
+            } else {
+                return data.stars > o.data.stars;
+            }
+        }
     }
 
     MemoryType* data;
     Player[] players;
-    int[Character.max+1] teams;
+    int[Character.max+1] teams = [1, 1, 0, 0, 0, 0, 0, 0];
 
     this(string name, string hash) {
         super(name, hash);
 
         data = cast(MemoryType*)memory.ptr;
+        players = iota(4).map!(i => new Player(i, data.players[i])).array;
+    }
 
-        foreach (i; 0..4) {
-            players ~= new Player(i, data.players[i], config.players[i]);
-        }
+    override void loadConfig() {
+        super.loadConfig();
 
-        teams = 0;
-        foreach (e; config.teams.byKeyValue) {
-            teams[e.key] = e.value;
-        }
+        teams.each!((c, ref t) => t = config.teams.require(cast(Character)c, t));
+    }
+
+    override void loadState() {
+        super.loadState();
+
+        players.each!(p => p.state = state.players[p.index]);
     }
 
     @property Player currentPlayer() {

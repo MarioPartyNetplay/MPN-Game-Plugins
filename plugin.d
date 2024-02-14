@@ -406,17 +406,17 @@ interface Plugin {
     void onFinish();
 }
 
-abstract class Game(ConfigType) : Plugin {
+final class NoState { }
+
+abstract class Game(ConfigType, StateType = NoState) : Plugin {
     string romName;
     string romHash;
-	string dllLocation;
     ConfigType config;
+    StateType state;
 
     this(string romName, string romHash) {
         this.romName = romName;
         this.romHash = romHash;
-
-        loadConfig();
     }
 
     void loadConfig() {
@@ -424,7 +424,6 @@ abstract class Game(ConfigType) : Plugin {
             config = readText(romName ~ ".json").parseJSON().fromJSON!ConfigType();
         } catch (FileException e) {
             config = new ConfigType;
-            saveConfig();
         }
     }
 
@@ -432,10 +431,34 @@ abstract class Game(ConfigType) : Plugin {
         std.file.write(romName ~ ".json", config.toJSON().toPrettyString());
     }
 
-    void onStart() { }
+    void loadState() {
+        static if (!is(StateType == NoState)) {
+            try {
+                state = readText(romName ~ "-State.json").parseJSON().fromJSON!StateType();
+            } catch (FileException e) {
+                state = new StateType;
+            }
+        }
+    }
+
+    void saveState() {
+        static if (!is(StateType == NoState)) {
+            std.file.write(romName ~ "-State.json", state.toJSON().toPrettyString());
+        }
+    }
+
+    void onStart() {
+        loadConfig();
+        saveConfig();
+        
+        loadState();
+        saveState();
+    }
     void onInput(int, InputData*) { }
     void onFrame(ulong) { }
-    void onFinish() { saveConfig(); }
+    void onFinish() {
+        saveState();
+    }
 }
 
 void addAddress(Address addr) {
@@ -660,6 +683,7 @@ extern (C) {
             if (pluginFactory) {
                 string romName = info.romName.to!string().strip();
                 string romHash = info.romHash.to!string().strip();
+
                 plugin = pluginFactory(romName, romHash);
 
                 try { plugin.onStart(); }
