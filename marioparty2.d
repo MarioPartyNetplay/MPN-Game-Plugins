@@ -184,6 +184,13 @@ class MarioParty2 : MarioParty!(MarioParty2Config, Memory) {
         }
 
         if (config.carryThreeItems) {
+            data.currentScene.onWrite((ref Scene scene) { // Reset lucky spaces at start of game
+                if (scene == Scene.START_BOARD) {
+                    players.each!(p => p.config.items = []);
+                    saveConfig();
+                }
+            });
+
             players.each!((p) {
                 p.data.item.onWrite((ref Item item, Address pc) {
                     if (!isBoardScene()) return;

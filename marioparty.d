@@ -113,6 +113,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
         data.currentScene.onWrite((ref Scene scene) {
             if (scene != data.currentScene) {
                 //info("Scene: ", scene);
+                //writeln("Scene: ", scene);
             }
         });
 
