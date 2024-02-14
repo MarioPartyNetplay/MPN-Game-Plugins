@@ -12,23 +12,21 @@ import std.string;
 import std.file;
 import std.json;
 
-immutable SHUFFLE_MINI_GAMES = -1;
-
 class PlayerConfig {
 
 }
 
 class MarioParty3Config : MarioPartyConfig {
     bool randomBonus = false;
-    string[string] bonuses;
-    int[string] teams;
+    string[BonusType] bonuses;
+    int[Character] teams;
     bool replaceChanceSpaces = false;
     bool enhancedTaunts = false;
     bool preventRepeatMiniGames = false;
     bool randomChanceOrder = false;
     bool finalTurnItems = false;
     float luckySpaceRatio = 0.0;
-    string[] blockedMiniGames;
+    MiniGame[] blockedMiniGames;
     bool doubleCoinMiniGames = false;
     bool mpiqPermadeath = false;
     bool finalResultsDoNotProceed = false;
@@ -43,30 +41,30 @@ class MarioParty3Config : MarioPartyConfig {
 
     this() {
         bonuses = [
-            BonusType.MINI_GAME.to!string: "Mini=Game",
-            BonusType.COIN.to!string:      "Coin",
-            BonusType.HAPPENING.to!string: "Happening",
-            BonusType.RED.to!string:       "Unlucky",
-            BonusType.BLUE.to!string:      "Blue",
-            BonusType.CHANCE.to!string:    "Chance",
-            BonusType.BOWSER.to!string:    "Bowser",
-            BonusType.BATTLE.to!string:    "Battle",
-            BonusType.ITEM.to!string:      "Item",
-            BonusType.BANK.to!string:      "Banking",
-            BonusType.GAME_GUY.to!string:  "Gambling"
+            BonusType.MINI_GAME: "Mini=Game",
+            BonusType.COIN:      "Coin",
+            BonusType.HAPPENING: "Happening",
+            BonusType.RED:       "Unlucky",
+            BonusType.BLUE:      "Blue",
+            BonusType.CHANCE:    "Chance",
+            BonusType.BOWSER:    "Bowser",
+            BonusType.BATTLE:    "Battle",
+            BonusType.ITEM:      "Item",
+            BonusType.BANK:      "Banking",
+            BonusType.GAME_GUY:  "Gambling"
         ];
 
         teams = [
-            Character.MARIO.to!string: 1,
-            Character.LUIGI.to!string: 1,
-            Character.PEACH.to!string: 2,
-            Character.YOSHI.to!string: 2
+            Character.MARIO: 1,
+            Character.LUIGI: 1,
+            Character.PEACH: 2,
+            Character.YOSHI: 2
         ];
     }
 }
 
 class StateConfig {
-    int[][string] miniGameQueue;
+    MiniGame[][MiniGameType] miniGameQueue;
     ubyte[] luckySpaces;
     int[] luckySpaceCount = [0, 0, 0, 0];
     ubyte[] usedBattleSpaces;
@@ -268,7 +266,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
     this(string name, string hash) {
         super(name, hash);
 
-        bonus = config.bonuses.keys().map!(k => k.to!BonusType).array;
+        bonus = config.bonuses.keys;
         if (config.replaceChanceSpaces) {
             bonus = bonus.remove!(b => b == BonusType.CHANCE);
         }
@@ -370,7 +368,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                     if (bt.any!(t => gameText.canFind(t))) {
                         foreach (j, ref t; bt) {
                             gameText = gameText.replace(t, BONUS_TEXT_REPLACEMENT[bonus[i]][j])
-                                               .replace("$NAME", config.bonuses[bonus[i].to!string]);
+                                               .replace("$NAME", config.bonuses[bonus[i]]);
                         }
                         break;
                     }
@@ -472,9 +470,9 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (turn != 1) return;
 
                 foreach (ref queue; state.miniGameQueue.byValue()) {
-                    queue = queue.remove!(e => e == SHUFFLE_MINI_GAMES);
+                    queue = queue.remove!(e => e == MiniGame._SHUFFLE);
                     queue.distanceShuffleUniform((queue.length-1)/2, random);
-                    queue ~= SHUFFLE_MINI_GAMES;
+                    queue ~= MiniGame._SHUFFLE;
                 }
                 saveState();
             });
@@ -488,20 +486,19 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (gpr.s0 == 0) {
                     auto type = (cast(MiniGame)gpr.v0).type;
                     auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
-                    auto queue = state.miniGameQueue.require(type.to!string, list.filter!(g => !config.blockedMiniGames.canFind(g.to!string))
-                                                                                 .map!(g => g.to!int)
-                                                                                 .array.randomShuffle(random) ~ SHUFFLE_MINI_GAMES);
-                    if (queue.front == SHUFFLE_MINI_GAMES) {
+                    auto queue = state.miniGameQueue.require(type, list.filter!(g => !config.blockedMiniGames.canFind(g))
+                                                                       .array.randomShuffle(random) ~ MiniGame._SHUFFLE);
+                    if (queue.front == MiniGame._SHUFFLE) {
                         queue = queue[1..$];
                         queue.distanceShuffleUniform((queue.length-1)/2, random);
-                        queue ~= SHUFFLE_MINI_GAMES;
+                        queue ~= MiniGame._SHUFFLE;
                     }
-                    auto game = queue.front.to!MiniGame;
+                    auto game = queue.front;
                     auto altCount = (0x80100E18 + gpr.s2).val!ubyte - 1;
                     auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
                     roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x800DF120.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
-                    state.miniGameQueue[type.to!string] = (queue[1..$] ~ queue.front);
+                    state.miniGameQueue[type] = (queue[1..$] ~ queue.front);
                     saveState();
                 }
                 gpr.v0 = data.miniGameRoulette[gpr.s0];
@@ -563,8 +560,8 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 luckySpaceImagePtr = 0;
                 if (!isBoardScene()) return;
 
-                mallocTemp(LUCKY_SPACE_IMAGE.length + 0x10, (ptr) {
-                    LUCKY_SPACE_IMAGE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
+                mallocTemp(LUCKY_SPACE_TEXTURE.length + 0x10, (ptr) {
+                    LUCKY_SPACE_TEXTURE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
                     luckySpaceImagePtr = ptr;
                 });
             });
@@ -656,7 +653,7 @@ class MarioParty3 : MarioParty!(MarioParty3Config, Data) {
                 if (scene != Scene.FINISH_BOARD) return;
                 info("Lucky Spaces:");
                 state.luckySpaceCount.each!((i, count) {
-                    info(format("    %-8s %2d", data.players[i].character.to!string ~ ':', count));
+                    info(format("    %-8s %2d", data.players[i].character ~ ":", count));
                 });
             });
         }
@@ -977,7 +974,8 @@ enum MiniGame : ubyte {
     GAME_GUYS_MAGIC_BOXES    =  69,
     GAME_GUYS_SWEET_SURPRISE =  70,
     DIZZY_DINGHIES           =  71,
-    MARIOS_PUZZLE_PARTY_PRO  =  72
+    MARIOS_PUZZLE_PARTY_PRO  =  72,
+    _SHUFFLE                 = 255
 }
 
 enum MiniGameType {
@@ -1051,7 +1049,7 @@ MiniGameType type(MiniGame game) {
     }
 }
 
-immutable ubyte[] LUCKY_SPACE_IMAGE = [
+immutable ubyte[] LUCKY_SPACE_TEXTURE = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x37, 0x00, 0x88, 0x81, 0x37, 0x00, 0x88, 0x9A, 0x37, 0x00, 0x88, 0xA1,

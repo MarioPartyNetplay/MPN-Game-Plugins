@@ -67,7 +67,7 @@ class MarioParty(ConfigType, MemoryType) : Game!ConfigType {
 
         teams = 0;
         foreach (e; config.teams.byKeyValue) {
-            teams[e.key.to!Character] = e.value;
+            teams[e.key] = e.value;
         }
     }
 

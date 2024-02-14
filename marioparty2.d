@@ -20,13 +20,22 @@ class PlayerConfig {
 class MarioParty2Config : MarioPartyConfig {
     bool carryThreeItems = false;
     bool randomBoardMiniGames = false;
-    int[string] teams;
+    int[Character] teams;
     PlayerConfig[] players = [
         new PlayerConfig(),
         new PlayerConfig(),
         new PlayerConfig(),
         new PlayerConfig()
     ];
+
+    this() {
+        teams = [
+            Character.MARIO: 1,
+            Character.LUIGI: 1,
+            Character.PEACH: 2,
+            Character.YOSHI: 2
+        ];
+    }
 }
 
 union Chain {

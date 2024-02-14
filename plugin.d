@@ -85,7 +85,8 @@ mixin template Field(Address A, T, string N) {
     }
 }
 
-JSONValue toJSON(T)(const T scl) if (isScalarType!T) { return JSONValue(scl); }
+JSONValue toJSON(T)(const T scl) if (isScalarType!T && !is (T == enum)) { return JSONValue(scl); }
+JSONValue toJSON(T)(const T enm) if (is (T == enum)) { return JSONValue(enm.to!string); }
 JSONValue toJSON(T)(const T str) if (isSomeString!T) { return JSONValue(str); }
 JSONValue toJSON(T)(const T arr) if (isArray!T && !isSomeString!T) {
     return JSONValue(arr.map!(e => e.toJSON()).array);
@@ -93,7 +94,7 @@ JSONValue toJSON(T)(const T arr) if (isArray!T && !isSomeString!T) {
 JSONValue toJSON(T)(const T asc) if (isAssociativeArray!T) {
     auto result = parseJSON("{}");
     foreach (ref k, ref v; asc) {
-        result[k.to!string()] = v.toJSON();
+        result[k.to!string] = v.toJSON();
     }
     return result;
 }
@@ -118,7 +119,7 @@ JSONValue toJSON(T)(const T agg, JSONValue result = parseJSON("{}")) if (is(T ==
     }
 }
 
-T fromJSON(T)(const JSONValue scl) if (isScalarType!T) {
+T fromJSON(T)(const JSONValue scl) if (isScalarType!T && !is (T == enum)) {
     switch (scl.type) {
         case JSONType.integer:  return cast(T)scl.integer;
         case JSONType.uinteger: return cast(T)scl.uinteger;
@@ -128,14 +129,17 @@ T fromJSON(T)(const JSONValue scl) if (isScalarType!T) {
         default:                assert(0, "Invalid JSONValue type");
     }
 }
+T fromJSON(T)(const JSONValue enm) if (is (T == enum)) {
+    return enm.type == JSONType.integer ? cast(T)enm.integer : enm.str.to!T;
+}
 T fromJSON(T)(const JSONValue str) if (isSomeString!T) { return str.str; }
 T fromJSON(T)(const JSONValue arr) if (isArray!T && !isSomeString!T) {
-    return arr.array.map!(e => e.fromJSON!(ElementType!T)()).array;
+    return arr.array.map!(e => e.fromJSON!(ElementType!T)).array;
 }
 T fromJSON(T)(const JSONValue obj) if (isAssociativeArray!T) {
     T result;
     foreach (ref k, ref v; obj.object) {
-        result[k] = v.fromJSON!(typeof(result[k]))();
+        result[k.to!(KeyType!T)] = v.fromJSON!(ValueType!T);
     }
     return result;
 }
@@ -144,7 +148,7 @@ T fromJSON(T)(const JSONValue obj) if (is(T == struct)) {
     foreach (i, ref v; result.tupleof) {
         auto k = __traits(identifier, result.tupleof[i]);
         if (auto value = k in obj) {
-            v = (*value).fromJSON!(typeof(v))();
+            v = (*value).fromJSON!(typeof(v));
         }
     }
     return result;
@@ -155,7 +159,7 @@ T fromJSON(T)(const JSONValue obj, T result = null) if (is(T == class)) {
     foreach (i, ref v; result.tupleof) {
         auto k = __traits(identifier, result.tupleof[i]);
         if (auto value = k in obj) {
-            v = (*value).fromJSON!(typeof(v))();
+            v = (*value).fromJSON!(typeof(v));
         }
     }
     static if (is(BaseClassesTuple!T[0])) {
