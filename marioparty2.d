@@ -289,6 +289,14 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     }
                 });
             });
+
+            data.currentTurn.onRead((ref ushort turn, Address pc) {
+                if ((pc + 8).val!Instruction == 0x844293AE && (pc + 12).val!Instruction == 0x14620005) {
+                    turn = cast(ushort)(data.totalTurns - 1);
+                } else if (pc.val!Instruction == 0x86850008 && (pc - 8).val!Instruction == 0x0804230C) {
+                    turn = cast(ushort)(data.totalTurns - 1);
+                }
+            });
         }
 
         if (config.randomItemAndDuelMiniGames) {
