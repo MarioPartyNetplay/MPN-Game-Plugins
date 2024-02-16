@@ -17,6 +17,7 @@ class Config {
     bool teamMode = false;
     bool carryThreeItems = false;
     bool randomItemAndDuelMiniGames = false;
+    bool cheaperAndBetterItems = false;
     int[Character] teams;
 }
 
@@ -89,6 +90,7 @@ union Memory {
     mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
     mixin Field!(0x80018B28, Instruction, "randomByteRoutine");
     mixin Field!(0x8004DE7C, Instruction, "openItemMenuRoutine");
+    mixin Field!(0x800CC000, Arr!(ubyte, 10), "itemPrices");
     mixin Field!(0x800DF724, Ptr!Instruction, "plunderChestRoutinePtr");
     mixin Field!(0x800F93AA, Board, "currentBoard");
     mixin Field!(0x800E18D4, Ptr!Space, "spaceData");
@@ -289,11 +291,58 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     }
                 });
             });
+        }
 
-            data.currentTurn.onRead((ref ushort turn, Address pc) {
-                if ((pc + 8).val!Instruction == 0x844293AE && (pc + 12).val!Instruction == 0x14620005) {
-                    turn = cast(ushort)(data.totalTurns - 1);
-                } else if (pc.val!Instruction == 0x86850008 && (pc - 8).val!Instruction == 0x0804230C) {
+        if (config.cheaperAndBetterItems) {
+            // Decrease item price by 5 coins
+            for (auto item = Item.MUSHROOM; item <= Item.MAGIC_LAMP; item++) {
+                data.itemPrices[item].onRead((ref ubyte price) {
+                    if (!isBoardScene()) return;
+                    if (!price) return;
+
+                    price -= 5;
+                });
+            }
+
+            // Allow players with 5 or more coins to shop
+            players.each!((p) {
+                p.data.coins.onRead((ref ushort coins, Address pc) {
+                    if (!isBoardScene()) return;
+
+                    auto space = getSpace(currentPlayer);
+                    if (!space || space.type != Space.Type.ARROW) return;
+
+                    if (((pc + 4).val!Instruction & 0xFC00FFFF) == 0x2800000A) { // SLTI $T, $S, 10
+                        coins += 5;
+                    }
+                });
+            });
+
+            // Update prices in dialog box
+            0x8009DB18.onExecDone({
+                if (!isBoardScene()) return;
+                if (gpr.v0 < 16 || gpr.v0 >= 0x7FF) return;
+                char[16] start;
+                start.each!((i, ref c) => c = (gpr.a3 + cast(uint)i).val!char);
+                if (start != "\x0B\x1A\x1A\x1A\x1AWhich \x0FItem") return;
+
+                auto text = new char[gpr.v0];
+                text.each!((i, ref c) => c = (gpr.a3 + cast(uint)i).val!char);
+                text.replace("x 10", "x  5")
+                    .replace("x 15", "x 10")
+                    .replace("x 20", "x 15")
+                    .replace("x 25", "x 20")
+                    .replace("x 30", "x 25")
+                    .each!((i, ref c) => (gpr.a3 + cast(uint)i).val!char = c);
+            });
+
+            // Make end-game items available at all times
+            data.currentTurn.onRead((ref ushort turn) {
+                if (!isBoardScene()) return;
+                auto space = getSpace(currentPlayer);
+                if (!space) return;
+
+                if (space.type == Space.Type.ITEM || space.type == Space.Type.ARROW) {
                     turn = cast(ushort)(data.totalTurns - 1);
                 }
             });
