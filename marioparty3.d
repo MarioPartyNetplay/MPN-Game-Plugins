@@ -72,16 +72,16 @@ union Memory {
     mixin Field!(0x800365A8, Instruction, "textChar");
     mixin Field!(0x8004ACE0, Instruction, "playSFX");
     mixin Field!(0x80097650, uint, "randomState");
-    mixin Field!(0x800CC4E5, ubyte, "itemHiddenBlockSpaceIndex");
+    mixin Field!(0x800CC4E4, ushort, "itemHiddenBlockSpaceIndex");
     mixin Field!(0x800CD05A, ubyte, "totalTurns");
     mixin Field!(0x800CD05B, ubyte, "currentTurn");
     mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
     mixin Field!(0x800CD069, ubyte, "currentSpaceIndex");
     mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
-    mixin Field!(0x800CE1C5, ubyte, "coinHiddenBlockSpaceIndex");
+    mixin Field!(0x800CE1C4, ushort, "coinHiddenBlockSpaceIndex");
     mixin Field!(0x800CE200, Scene, "currentScene");
     mixin Field!(0x800D1108, Arr!(Player, 4), "players");
-    mixin Field!(0x800D124F, ubyte, "starHiddenBlockSpaceIndex");
+    mixin Field!(0x800D124E, ushort, "starHiddenBlockSpaceIndex");
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
     mixin Field!(0x800EB094, Instruction, "spacesLoaded");
     mixin Field!(0x800F52C4, Instruction, "determineTeams");
@@ -629,6 +629,16 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                            .sort!((p, q) => p.data.stars > q.data.stars, SwapStrategy.stable)
                            .each!((p) {
                     info(format("    %-8s %2d", p.data.character.to!string ~ ":", p.state.luckySpaceCount));
+                });
+            });
+            0x800EBCD4.onExec({ // Choose hidden block location
+                if (!isBoardScene()) return;
+                auto spaces = Ptr!Space(data.pointerToSpaces);
+                auto luckySpaces = state.luckySpaces.filter!(i => spaces[i].type == Space.Type.BLUE).array;
+                // Temporarily make lucky spaces red so hidden blocks are not placed there
+                luckySpaces.each!(i => spaces[i].type = Space.Type.RED);
+                0x800EBCF4.onExecOnce({
+                    luckySpaces.each!(i => spaces[i].type = Space.Type.BLUE);
                 });
             });
         }
