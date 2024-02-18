@@ -19,7 +19,6 @@ class Config {
     bool randomBonus = false;
     string[BonusType] bonuses;
     int[Character] teams;
-    bool replaceChanceSpaces = false;
     bool enhancedTaunts = false;
     bool preventRepeatMiniGames = false;
     bool randomChanceOrder = false;
@@ -67,29 +66,37 @@ class State {
 
 union Memory {
     ubyte[0x800000] ram;
-    mixin Field!(0x800D1108, Arr!(Player, 4), "players");
-    mixin Field!(0x800CE200, Scene, "currentScene");
+    mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
+    mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
+    mixin Field!(0x80036574, Instruction, "textLength");
+    mixin Field!(0x800365A8, Instruction, "textChar");
+    mixin Field!(0x8004ACE0, Instruction, "playSFX");
+    mixin Field!(0x80097650, uint, "randomState");
+    mixin Field!(0x800CC4E5, ubyte, "itemHiddenBlockSpaceIndex");
     mixin Field!(0x800CD05A, ubyte, "totalTurns");
     mixin Field!(0x800CD05B, ubyte, "currentTurn");
     mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
     mixin Field!(0x800CD069, ubyte, "currentSpaceIndex");
     mixin Field!(0x800CDA7C, Arr!(ushort, 4), "buttons");
-    mixin Field!(0x8010570E, ubyte, "numberOfRolls");
-    mixin Field!(0x80097650, uint, "randomState");
-    mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
+    mixin Field!(0x800CE1C5, ubyte, "coinHiddenBlockSpaceIndex");
+    mixin Field!(0x800CE200, Scene, "currentScene");
+    mixin Field!(0x800D1108, Arr!(Player, 4), "players");
+    mixin Field!(0x800D124F, ubyte, "starHiddenBlockSpaceIndex");
     mixin Field!(0x800DFE88, Instruction, "chooseGameRoutine");
+    mixin Field!(0x800EB094, Instruction, "spacesLoaded");
+    mixin Field!(0x800F52C4, Instruction, "determineTeams");
     mixin Field!(0x800FAB98, Instruction, "duelRoutine");
     mixin Field!(0x800FB624, Instruction, "battleRoutine");
     mixin Field!(0x800FC3C8, Instruction, "battleRoutineComplete");
-    mixin Field!(0x8000B198, Instruction, "randomByteRoutine");
-    mixin Field!(0x80036574, Instruction, "textLength");
-    mixin Field!(0x800365A8, Instruction, "textChar");
-    mixin Field!(0x80009A1C, Instruction, "storeButtonPress");
-    mixin Field!(0x8004ACE0, Instruction, "playSFX");
-    mixin Field!(0x800EB094, Instruction, "spacesLoaded");
     mixin Field!(0x800FE29C, Instruction, "blueOrRedSpaceCoins");
-    mixin Field!(0x800F52C4, Instruction, "determineTeams");
+    mixin Field!(0x80101780, uint, "chancePlayer1");
+    mixin Field!(0x80101784, uint, "chancePlayer2");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameRoulette");
+    mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
+    mixin Field!(0x80105210, ushort, "numberOfSpaces");
+    mixin Field!(0x80105214, Address, "pointerToSpaces");
+    mixin Field!(0x80105220, Arr!(Address, 16), "spaceTypeTexturePointers");
+    mixin Field!(0x8010570E, ubyte, "numberOfRolls");
     mixin Field!(0x801057E0, Arr!(PlayerPanel, 4), "playerPanels");
     mixin Field!(0x80108470, Instruction, "loadBonusStat1a");
     mixin Field!(0x801084B4, Instruction, "loadBonusStat1b");
@@ -97,11 +104,6 @@ union Memory {
     mixin Field!(0x801088DC, Instruction, "loadBonusStat2b");
     mixin Field!(0x80108CC0, Instruction, "loadBonusStat3a");
     mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
-    mixin Field!(0x80101780, uint, "chancePlayer1");
-    mixin Field!(0x80101784, uint, "chancePlayer2");
-    mixin Field!(0x80105210, ushort, "numberOfSpaces");
-    mixin Field!(0x80105214, Address, "pointerToSpaces");
-    mixin Field!(0x80105220, Arr!(Address, 16), "spaceTypeTexturePointers");
     mixin Field!(0x80109568, BowserEventType, "bowserEventType");
     mixin Field!(0x8010C9E8, Arr!(uint, 4), "mpiqNoJump");
     mixin Field!(0x8010FE64, Arr!(ubyte, 3), "chanceOrder");
@@ -265,9 +267,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         super.loadConfig();
 
         bonus = config.bonuses.keys;
-        if (config.replaceChanceSpaces) {
-            bonus = bonus.remove!(b => b == BonusType.CHANCE);
-        }
     }
 
     override bool lockTeams() const {
@@ -441,19 +440,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             });
         }
 
-        if (config.replaceChanceSpaces) {
-            0x800FC594.onExec({
-                if (!isBoardScene()) return;
-                0x800FC5A4.val!Instruction = 0x10000085;
-            });
-            0x800EAEF4.onExec({
-                if (!isBoardScene()) return;
-                if (gpr.v0 == Space.Type.CHANCE) {
-                    gpr.v0 = Space.Type.GAME_GUY;
-                }
-            });
-        }
-
         if (config.preventRepeatMiniGames || config.blockedMiniGames.length > 0) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene == Scene.START_BOARD) {
@@ -537,28 +523,30 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.luckySpaceRatio > 0) {
-            Ptr!Address luckySpaceImagePtr = 0;
+            Ptr!Address luckySpaceTexturePtr = 0;
             bool resetLuckySpaces = state.luckySpaces.empty;
             ubyte[] bSpaces, lSpaces;
             
             0x8003592C.onExecDone({ // Finish making temp heap
-                luckySpaceImagePtr = 0;
+                luckySpaceTexturePtr = 0;
                 if (!isBoardScene()) return;
-
                 mallocTemp(LUCKY_SPACE_TEXTURE.length + 0x10, (ptr) {
                     LUCKY_SPACE_TEXTURE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
-                    luckySpaceImagePtr = ptr;
+                    luckySpaceTexturePtr = ptr;
                 });
             });
             data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onRead((ref Address ptr, Address pc) {
                 if (!isBoardScene()) return;
-                if (pc.val!Instruction != 0x8C420000) return;
-                
-                ptr = luckySpaceImagePtr;
+                if (pc.val!Instruction != 0x8C420000) {
+                    ptr = 0;
+                }
+            });
+            data.spaceTypeTexturePointers[Space.Type.UNKNOWN_1].onWrite((ref Address ptr) {
+                if (!isBoardScene()) return;
+                ptr = luckySpaceTexturePtr;
             });
             0x800EA4F0.onExec({ // Force high res space textures on full map view
                 if (!isBoardScene()) return;
-
                 gpr.a0 = false;
             });
             data.currentScene.onWrite((ref Scene scene) { // Reset lucky spaces at start of game
@@ -735,10 +723,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 saveState();
             });
 
-            0x800FC594.onExec({
-                if (!isBoardScene()) return;
-                0x800FC5A4.val!Instruction = 0x10000085;
-            });
             0x800EAEF4.onExec({
                 if (!isBoardScene()) return;
                 if (gpr.v0 == Space.Type.BATTLE && state.usedBattleSpaces.canFind(gpr.s2)) {
