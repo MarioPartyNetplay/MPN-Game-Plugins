@@ -30,6 +30,7 @@ class Config {
     bool finalResultsDoNotProceed = false;
     bool improveLastFiveTurnsBonus = false;
     bool singleUseBattleSpaces = false;
+    bool unlockEverything = false;
 
     this() {
         bonuses = [
@@ -782,6 +783,13 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     gpr.v0 = Space.Type.BLUE;
                 }
             });
+        }
+
+        // TODO: Not actually everything. Expand later.
+        if (config.unlockEverything) {
+            0x80035C00.onExecDone({ gpr.a0 |= 0xFF; });                        // Mini-Games (800CC0DE - 800CC0E5)
+            0x800CC158.val!ubyte.onRead((ref ubyte flags) { flags |= 0x20; }); // Super Hard
+            0x800CC159.val!ubyte.onRead((ref ubyte flags) { flags |= 0x02; }); // Waluigi's Island
         }
     }
 }
