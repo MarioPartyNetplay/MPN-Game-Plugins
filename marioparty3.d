@@ -528,6 +528,29 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             Ptr!Address luckySpaceTexturePtr = 0;
             Ptr!Address goldSpaceTexturePtr = 0;
             ubyte[] bSpaces, lSpaces, hSpaces;
+
+            bool validHiddenIndex(string exclude = null)(ushort index) {
+                if (index == 0xFFFF) return true;
+                if (index >= data.numberOfSpaces) return false;
+                auto spaces = Ptr!Space(data.pointerToSpaces);
+                if (spaces[index].type != Space.Type.BLUE) return false;
+                if (index < state.customSpaces.length && state.customSpaces[index] == CustomSpace.LUCKY) return false;
+                static if (exclude != "item") {
+                    if (index == data.itemHiddenBlock) return false;
+                }
+                static if (exclude != "coin") {
+                    if (index == data.coinHiddenBlock) return false;
+                }
+                static if (exclude != "star") {
+                    if (index == data.starHiddenBlock) return false;
+                }
+                return true;
+            }
+
+            ushort randomHiddenIndex() {
+                auto selection = iota(data.numberOfSpaces).filter!(i => validHiddenIndex(i)).array;
+                return selection.empty ? cast(ushort)0xFFFF : selection.choice(random);
+            }
             
             0x8003592C.onExecDone({ // Finish making temp heap
                 luckySpaceTexturePtr = 0;
@@ -605,6 +628,11 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                             bSpaces ~= cast(ubyte)i;
                         }
                     }
+                    if (config.revealHiddenBlocksOnFinalTurn) {
+                        if (!validHiddenIndex!"item"(data.itemHiddenBlock)) data.itemHiddenBlock = randomHiddenIndex();
+                        if (!validHiddenIndex!"coin"(data.coinHiddenBlock)) data.coinHiddenBlock = randomHiddenIndex();
+                        if (!validHiddenIndex!"star"(data.starHiddenBlock)) data.starHiddenBlock = randomHiddenIndex();
+                    }
                 }
                 if (gpr.s3 == Space.Type.BLUE) {
                     gpr.a0 = (gpr.s2 < bSpaces.length ? bSpaces[gpr.s2] : 0xFF);
@@ -651,36 +679,14 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 });
             });
             if (config.revealHiddenBlocksOnFinalTurn) {
-                auto randomHiddenIndex = () {
-                    auto spaces = Ptr!Space(data.pointerToSpaces);
-                    return iota(data.numberOfSpaces).filter!(i => spaces[i].type == Space.Type.BLUE)
-                                                    .filter!(i => state.customSpaces[i] != CustomSpace.LUCKY)
-                                                    .filter!(i => i != data.itemHiddenBlock)
-                                                    .filter!(i => i != data.coinHiddenBlock)
-                                                    .filter!(i => i != data.starHiddenBlock)
-                                                    .array.choice(random);
-                };
                 auto chooseHiddenBlockLocation = (ref ushort index) {
                     if (!isBoardScene()) return;
-
-                    index = randomHiddenIndex();
-                };
-                auto fixHiddenBlockLocation = (ref ushort index, Address pc, Address addr) {
-                    if (!isBoardScene()) return;
                     if (index == 0xFFFF) return;
-                    if (data.numberOfSpaces == 0) return;
-
-                    auto spaces = Ptr!Space(data.pointerToSpaces);
-                    if (index >= data.numberOfSpaces || spaces[index].type != Space.Type.BLUE || state.customSpaces[index] == CustomSpace.LUCKY) {
-                        index = addr.val!ushort = randomHiddenIndex();
-                    }
+                    index = randomHiddenIndex();
                 };
                 data.itemHiddenBlock.onWrite(chooseHiddenBlockLocation);
                 data.coinHiddenBlock.onWrite(chooseHiddenBlockLocation);
                 data.starHiddenBlock.onWrite(chooseHiddenBlockLocation);
-                data.itemHiddenBlock.onRead(fixHiddenBlockLocation);
-                data.coinHiddenBlock.onRead(fixHiddenBlockLocation);
-                data.starHiddenBlock.onRead(fixHiddenBlockLocation);
             }
         }
 
