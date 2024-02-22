@@ -529,10 +529,24 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             Ptr!Address goldSpaceTexturePtr = 0;
             ubyte[] bSpaces, lSpaces, hSpaces;
 
+            bool lumasPlaygroundHiddenIndex(ushort index) {
+                if (index == 98 || index == 103 || index == 107) {
+                    if (index >= data.numberOfSpaces) return false;
+                    auto spaces = Ptr!Space(data.pointerToSpaces);
+                    if (spaces[98].type == spaces[103].type && spaces[103].type == spaces[107].type) {
+                        if (spaces[index].type == Space.Type.START || spaces[index].type == Space.Type.HAPPENING) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
             bool validHiddenIndex(string exclude = null)(ushort index) {
                 if (index == 0xFFFF) return true;
                 if (index >= data.numberOfSpaces) return false;
                 auto spaces = Ptr!Space(data.pointerToSpaces);
+                if (lumasPlaygroundHiddenIndex(index)) return true;
                 if (spaces[index].type != Space.Type.BLUE) return false;
                 if (index < state.customSpaces.length && state.customSpaces[index] == CustomSpace.LUCKY) return false;
                 static if (exclude != "item") {
@@ -682,6 +696,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 auto chooseHiddenBlockLocation = (ref ushort index) {
                     if (!isBoardScene()) return;
                     if (index == 0xFFFF) return;
+                    if (lumasPlaygroundHiddenIndex(index)) return;
                     index = randomHiddenIndex();
                 };
                 data.itemHiddenBlock.onWrite(chooseHiddenBlockLocation);
@@ -811,8 +826,8 @@ extern (C) {
 
 enum CustomSpace : byte {
     NORMAL = 0,
-    BLUE  =  1,
-    LUCKY =  2
+    BLUE   = 1,
+    LUCKY  = 2
 }
 
 enum Char : ubyte {
