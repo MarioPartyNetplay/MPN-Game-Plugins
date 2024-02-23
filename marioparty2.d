@@ -205,6 +205,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
     }
 
     short getSpaceIndex(Player p) {
+        if (!p) return -1;
         if (!data.chainData) return -1;
         auto spaces = data.chainData[p.data.chain].spaces;
         if (!spaces) return -1;
@@ -398,13 +399,15 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     .each!((i, ref c) => (gpr.a3 + cast(uint)i).val!char = c);
             });
 
-            // Make end-game items available at all times
-            data.currentTurn.onRead((ref ushort turn) {
+            // Make items available at all times
+            data.currentTurn.onRead((ref ushort turn, Address pc) {
                 if (!isBoardScene()) return;
                 auto space = getSpace(currentPlayer);
                 if (!space) return;
 
-                if (space.type == Space.Type.ITEM || space.type == Space.Type.ARROW) {
+                if (space.type == Space.Type.ARROW) { // Item Shop
+                    turn = cast(ushort)(data.totalTurns - 1);
+                } else if (pc == 0x800663C8) {        // Item Space
                     turn = cast(ushort)(data.totalTurns - 1);
                 }
             });
