@@ -19,6 +19,23 @@ class Config {
     bool randomItemAndDuelMiniGames = false;
     bool cheaperAndBetterItems = false;
     int[Character] teams;
+    bool randomBonus = false;
+    string[BonusType] bonuses;
+
+    this() {
+        bonuses = [
+            BonusType.MINI_GAME: "Mini-Game",
+            BonusType.COIN:      "Coin",
+            BonusType.HAPPENING: "Happening",
+            BonusType.RED:       "Unlucky",
+            BonusType.BLUE:      "Blue",
+            BonusType.CHANCE:    "Chance",
+            BonusType.BOWSER:    "Bowser",
+            BonusType.BATTLE:    "Battle",
+            BonusType.ITEM:      "Item",
+            BonusType.BANK:      "Banking"
+        ];
+    }
 }
 
 class PlayerState {
@@ -71,10 +88,31 @@ union Player {
     mixin Field!(0x12, ushort, "space");
     mixin Field!(0x19, Item, "item");
     mixin Field!(0x1B, PanelColor, "color");
-    mixin Field!(0x28, ushort, "gameCoins");
+    mixin Field!(0x28, ushort, "miniGameCoins");
     mixin Field!(0x2A, ushort, "maxCoins");
+    mixin Field!(0x2C, ubyte, "happeningSpaces");
     mixin Field!(0x2D, ubyte, "redSpaces");
+    mixin Field!(0x2E, ubyte, "blueSpaces");
+    mixin Field!(0x2F, ubyte, "chanceSpaces");
+    mixin Field!(0x30, ubyte, "bowserSpaces");
+    mixin Field!(0x31, ubyte, "battleSpaces");
     mixin Field!(0x32, ubyte, "itemSpaces");
+    mixin Field!(0x33, ubyte, "bankSpaces");
+
+    uint getBonusStat(BonusType type) {
+        final switch (type) {
+            case BonusType.MINI_GAME: return miniGameCoins;
+            case BonusType.COIN:      return maxCoins;
+            case BonusType.HAPPENING: return happeningSpaces;
+            case BonusType.RED:       return redSpaces;
+            case BonusType.BLUE:      return blueSpaces;
+            case BonusType.CHANCE:    return chanceSpaces;
+            case BonusType.BOWSER:    return bowserSpaces;
+            case BonusType.BATTLE:    return battleSpaces;
+            case BonusType.ITEM:      return itemSpaces;
+            case BonusType.BANK:      return bankSpaces;
+        }
+    }
 }
 
 union Memory {
@@ -98,9 +136,33 @@ union Memory {
     mixin Field!(0x800F851A, byte, "itemMenuOpen");
 }
 
+void mallocPerm(size_t size, void delegate(uint ptr) callback) {
+    0x80040DA4.jal(cast(ushort)size, callback);
+}
+
+void freePerm(uint ptr, void delegate() callback) {
+    0x80040DC8.jal(ptr, callback);
+}
+
+void mallocTemp(size_t size, void delegate(uint ptr) callback) {
+    0x80040E74.jal(cast(ushort)size, callback);
+}
+
+void freeTemp(uint ptr, void delegate() callback) {
+    0x80040E98.jal(ptr, callback);
+}
+
 class MarioParty2 : MarioParty!(Config, State, Memory) {
+    BonusType[] bonus;
+
     this(string name, string hash) {
         super(name, hash);
+    }
+
+    override void loadConfig() {
+        super.loadConfig();
+
+        bonus = config.bonuses.keys;
     }
 
     override bool lockTeams() const {
@@ -361,6 +423,92 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                 }
             });
         }
+
+        if (config.randomBonus) {
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene != Scene.FINISH_BOARD) return;
+                bonus.partialShuffle(3, random);
+                info("Bonus Stars: ", bonus[0..3]);
+            });
+
+            0x80103F04.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s1].getBonusStat(bonus[BonusType.MINI_GAME]);
+            });
+
+            0x80103F50.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s1].getBonusStat(bonus[BonusType.MINI_GAME]);
+            });
+
+            0x80104314.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s1].getBonusStat(bonus[BonusType.COIN]);
+            });
+
+            0x80104360.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s1].getBonusStat(bonus[BonusType.COIN]);
+            });
+
+            0x80104724.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v1 = data.players[gpr.s1].getBonusStat(bonus[BonusType.HAPPENING]);
+            });
+
+            0x80104770.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+                gpr.v0 = data.players[gpr.s1].getBonusStat(bonus[BonusType.HAPPENING]);
+            });
+
+            void setText(string text) {
+                text = text.replace("<BLACK>",  "\x01")
+                           .replace("<BLUE>",   "\x02")
+                           .replace("<RED>",    "\x03")
+                           .replace("<PINK>",   "\x04")
+                           .replace("<GREEN>",  "\x05")
+                           .replace("<CYAN>",   "\x06")
+                           .replace("<YELLOW>", "\x07")
+                           .replace("<1>",      "\x11")
+                           .replace("<2>",      "\x12")
+                           .replace("<3>",      "\x13")
+                           .replace("<RESET>",  "\x19")
+                           .replace('-',        '\x3D')
+                           .replace('\'',       '\x5C')
+                           .replace(',',        '\x82')
+                           .replace('.',        '\x85')
+                           .replace('!',        '\xC2')
+                           .replace('?',        '\xC3');
+                text ~= "\xFF\x00";
+                mallocTemp(text.length, (ptr) {
+                    text.each!((i, c) { Ptr!char(ptr)[i] = c; });
+                    gpr.a1 = ptr;
+                });
+            }
+
+            0x800890CC.onExecDone({
+                if (data.currentScene != Scene.FINISH_BOARD) return;
+
+                switch (gpr.a1) {
+                    case 0x5F8: setText("First, the <" ~ getColor(bonus[BonusType.MINI_GAME]) ~ ">" ~ config.bonuses[bonus[BonusType.MINI_GAME]] ~ " Star<RESET>\naward! This award goes to\nthe player who " ~ getDescription(bonus[BonusType.MINI_GAME])  ~ "."); break;
+                    case 0x5F9: setText("The <" ~ getColor(bonus[BonusType.MINI_GAME]) ~ ">" ~ config.bonuses[bonus[BonusType.MINI_GAME]] ~ " Star<RESET>\ngoes to <1>!"); break;
+                    case 0x5FA: setText("It's a tie! <YELLOW>Stars<RESET> go\nto two players...\n<1> and <2>!"); break;
+                    case 0x5FB: setText("It's a three-way tie!\n<YELLOW>Stars<RESET> go to three\nplayers...<1>,\n<2> and <3>!"); break;
+                    case 0x5FC: setText("It's a four-way tie!!!\nAll four players are\n<" ~ getColor(bonus[BonusType.MINI_GAME]) ~ ">" ~ config.bonuses[bonus[BonusType.MINI_GAME]] ~ " Stars<RESET>, so no\n<YELLOW>Stars<RESET> will be awarded."); break;
+                    case 0x5FD: setText("Next, the <" ~ getColor(bonus[BonusType.COIN]) ~ ">" ~ config.bonuses[bonus[BonusType.COIN]] ~ " Star<RESET>\naward! This award goes to\nthe player who " ~ getDescription(bonus[BonusType.COIN])  ~ "."); break;
+                    case 0x5FE: setText("The <" ~ getColor(bonus[BonusType.COIN]) ~ ">" ~ config.bonuses[bonus[BonusType.COIN]] ~ " Star<RESET>\ngoes to <1>!"); break;
+                    case 0x5FF: setText("It's a tie! <YELLOW>Stars<RESET> go\nto two players...\n<1> and <2>!"); break;
+                    case 0x600: setText("It's a three-way tie!\n<YELLOW>Stars<RESET> go to three\nplayers...<1>,\n<2> and <3>!"); break;
+                    case 0x601: setText("It's a four-way tie!!!\nAll four players are\n<" ~ getColor(bonus[BonusType.COIN]) ~ ">" ~ config.bonuses[bonus[BonusType.COIN]] ~ " Stars<RESET>, so no\n<YELLOW>Stars<RESET> will be awarded."); break;
+                    case 0x602: setText("Finally, the <" ~ getColor(bonus[BonusType.HAPPENING]) ~ ">" ~ config.bonuses[bonus[BonusType.HAPPENING]] ~ " Star<RESET>\naward! This award goes to\nthe player who " ~ getDescription(bonus[BonusType.HAPPENING])  ~ "."); break;
+                    case 0x603: setText("The <" ~ getColor(bonus[BonusType.HAPPENING]) ~ ">" ~ config.bonuses[bonus[BonusType.HAPPENING]] ~ " Star<RESET>\ngoes to <1>!"); break;
+                    case 0x604: setText("It's a tie! <YELLOW>Stars<RESET> go\nto two players...\n<1> and <2>!"); break;
+                    case 0x605: setText("It's a three-way tie!\n<YELLOW>Stars<RESET> go to three\nplayers...<1>,\n<2> and <3>!"); break;
+                    case 0x606: setText("It's a four-way tie!!!\nAll four players are\n<" ~ getColor(bonus[BonusType.HAPPENING]) ~ ">" ~ config.bonuses[bonus[BonusType.HAPPENING]] ~ " Stars<RESET>, so no\n<YELLOW>Stars<RESET> will be awarded."); break;
+                    default:
+                }
+            });
+        }
     }
 }
 
@@ -373,6 +521,49 @@ extern (C) {
         pluginFactory = (name, hash) => new MarioParty2(name, hash);
 
         return 0;
+    }
+}
+
+enum BonusType {
+    MINI_GAME,
+    COIN,
+    HAPPENING,
+    RED,
+    BLUE,
+    CHANCE,
+    BOWSER,
+    BATTLE,
+    ITEM,
+    BANK
+}
+
+string getColor(BonusType type) {
+    final switch (type) {
+        case BonusType.MINI_GAME: return "CYAN";
+        case BonusType.COIN:      return "YELLOW";
+        case BonusType.HAPPENING: return "GREEN";
+        case BonusType.RED:       return "RED";
+        case BonusType.BLUE:      return "BLUE";
+        case BonusType.CHANCE:    return "GREEN";
+        case BonusType.BOWSER:    return "RED";
+        case BonusType.BATTLE:    return "GREEN";
+        case BonusType.ITEM:      return "GREEN";
+        case BonusType.BANK:      return "YELLOW";
+    }
+}
+
+string getDescription(BonusType type) {
+    final switch (type) {
+        case BonusType.MINI_GAME: return "collected the\nmost <YELLOW>Coins<RESET> in Mini-Games";
+        case BonusType.COIN:      return "held the\nmost <YELLOW>Coins<RESET> at one time";
+        case BonusType.HAPPENING: return "landed on\nthe most <GREEN>? Spaces<RESET>";
+        case BonusType.RED:       return "landed on\nthe most <RED>Red Spaces<RESET>";
+        case BonusType.BLUE:      return "landed on\nthe most <BLUE>Blue Spaces<RESET>";
+        case BonusType.CHANCE:    return "landed on\nthe most <GREEN>! Spaces<RESET>";
+        case BonusType.BOWSER:    return "landed on\nthe most <RED>Bowser Spaces<RESET>";
+        case BonusType.BATTLE:    return "landed on\nthe most <GREEN>Battle Spaces<RESET>";
+        case BonusType.ITEM:      return "landed on\nthe most <GREEN>Item Spaces<RESET>";
+        case BonusType.BANK:      return "landed on\nthe most <GREEN>Bank Spaces<RESET>";
     }
 }
 
