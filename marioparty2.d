@@ -300,9 +300,11 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                         }
                     }
 
-                    if (pc == 0x8004E984) { // Check for Bowser Bomb
-                        item = p.state.items.canFind(Item.BOWSER_BOMB) ? Item.BOWSER_BOMB : Item.NONE;
-                        return;
+                    if (p.state.items.canFind(Item.BOWSER_BOMB)) {
+                        if (p.index != data.currentPlayerIndex || pc == 0x8004E984) { // pc == Check for Bowser Bomb
+                            item = Item.BOWSER_BOMB;
+                            return;
+                        }
                     }
 
                     if (itemsFull(p) || pc == 0x8005EEA8) { // pc == Display Icon on Panel
