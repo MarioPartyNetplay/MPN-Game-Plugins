@@ -131,8 +131,8 @@ union Memory {
     mixin Field!(0x800CC000, Arr!(ubyte, 10), "itemPrices");
     mixin Field!(0x800DF724, Ptr!Instruction, "plunderChestRoutinePtr");
     mixin Field!(0x800F93AA, Board, "currentBoard");
-    mixin Field!(0x800E18D4, Ptr!Space, "spaceData");
-    mixin Field!(0x800E18D8, Ptr!Chain, "chainData");
+    mixin Field!(0x800E18D4, Ptr!Space, "spaces");
+    mixin Field!(0x800E18D8, Ptr!Chain, "chains");
     mixin Field!(0x800F851A, byte, "itemMenuOpen");
 }
 
@@ -206,15 +206,15 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
 
     short getSpaceIndex(Player p) {
         if (!p) return -1;
-        if (!data.chainData) return -1;
-        auto spaces = data.chainData[p.data.chain].spaces;
+        if (!data.chains) return -1;
+        auto spaces = data.chains[p.data.chain].spaces;
         if (!spaces) return -1;
         return spaces[p.data.space];
     }
 
     Space* getSpace(Player p) {
         auto i = getSpaceIndex(p);
-        return i >= 0 ? &data.spaceData[i] : null;
+        return i >= 0 ? &data.spaces[i] : null;
     }
 
     bool itemsFull(Player p) {

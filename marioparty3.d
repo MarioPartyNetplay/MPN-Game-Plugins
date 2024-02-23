@@ -95,8 +95,8 @@ union Memory {
     mixin Field!(0x80101784, uint, "chancePlayer2");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameRoulette");
     mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
-    mixin Field!(0x80105210, ushort, "numberOfSpaces");
-    mixin Field!(0x80105214, Address, "pointerToSpaces");
+    mixin Field!(0x80105210, ushort, "spaceCount");
+    mixin Field!(0x80105214, Ptr!Space, "spaces");
     mixin Field!(0x80105220, Arr!(Address, 16), "spaceTypeTexturePointers");
     mixin Field!(0x8010570E, ubyte, "numberOfRolls");
     mixin Field!(0x801057E0, Arr!(PlayerPanel, 4), "playerPanels");
@@ -531,10 +531,9 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
 
             bool lumasPlaygroundHiddenIndex(ushort index) {
                 if (index == 98 || index == 103 || index == 107) {
-                    if (index >= data.numberOfSpaces) return false;
-                    auto spaces = Ptr!Space(data.pointerToSpaces);
-                    if (spaces[98].type == spaces[103].type && spaces[103].type == spaces[107].type) {
-                        if (spaces[index].type == Space.Type.START || spaces[index].type == Space.Type.HAPPENING) {
+                    if (index >= data.spaceCount) return false;
+                    if (data.spaces[98].type == data.spaces[103].type && data.spaces[103].type == data.spaces[107].type) {
+                        if (data.spaces[index].type == Space.Type.START || data.spaces[index].type == Space.Type.HAPPENING) {
                             return true;
                         }
                     }
@@ -544,10 +543,9 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
 
             bool validHiddenIndex(string exclude = null)(ushort index) {
                 if (index == 0xFFFF) return true;
-                if (index >= data.numberOfSpaces) return false;
-                auto spaces = Ptr!Space(data.pointerToSpaces);
+                if (index >= data.spaceCount) return false;
                 if (lumasPlaygroundHiddenIndex(index)) return true;
-                if (spaces[index].type != Space.Type.BLUE) return false;
+                if (data.spaces[index].type != Space.Type.BLUE) return false;
                 if (index < state.customSpaces.length && state.customSpaces[index] == CustomSpace.LUCKY) return false;
                 static if (exclude != "item") {
                     if (index == data.itemHiddenBlock) return false;
@@ -562,7 +560,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             }
 
             ushort randomHiddenIndex() {
-                auto selection = iota(data.numberOfSpaces).filter!(i => validHiddenIndex(i)).array;
+                auto selection = iota(data.spaceCount).filter!(i => validHiddenIndex(i)).array;
                 return selection.empty ? cast(ushort)0xFFFF : selection.choice(random);
             }
             
@@ -619,9 +617,8 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             0x800EAC74.onExec({ // Display lucky spaces on board
                 if (!isBoardScene()) return;
                 if (gpr.s3 == Space.Type.BLUE && gpr.s2 == 0) { // Cache blue and lucky space lists
-                    auto spaces = Ptr!Space(data.pointerToSpaces);
-                    auto blueSpaces = iota(data.numberOfSpaces).filter!(e => spaces[e].type == Space.Type.BLUE).array;
-                    state.customSpaces.length = data.numberOfSpaces;
+                    auto blueSpaces = iota(data.spaceCount).filter!(e => data.spaces[e].type == Space.Type.BLUE).array;
+                    state.customSpaces.length = data.spaceCount;
                     long newLuckyCount = roundTo!long(blueSpaces.length * min(config.luckySpaceRatio, 1.0))
                                        - state.customSpaces.count!(e => e == CustomSpace.LUCKY);
                     auto newBlues = blueSpaces.filter!(e => state.customSpaces[e] == CustomSpace.NORMAL).array.randomShuffle(random);
@@ -788,8 +785,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             data.battleRoutineComplete.addr.onExec({
                 if (!isBoardScene()) return;
                 if (!gpr.v0) return; // Battle cancelled
-                auto spaces = Ptr!Space(data.pointerToSpaces);
-                if (spaces[data.currentSpaceIndex].type != Space.Type.BATTLE) return;
+                if (data.spaces[data.currentSpaceIndex].type != Space.Type.BATTLE) return;
                 if (state.usedBattleSpaces.canFind(data.currentSpaceIndex)) return;
                 state.usedBattleSpaces ~= data.currentSpaceIndex;
                 saveState();
