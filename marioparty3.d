@@ -23,7 +23,7 @@ class Config {
     bool preventRepeatMiniGames = false;
     bool randomChanceOrder = false;
     bool itemsOnFinalTurn = false;
-    float luckySpaceRatio = 0.0;
+    int luckySpacePercentage = 0;
     MiniGame[] blockedMiniGames;
     bool doubleCoinMiniGames = false;
     bool mpiqPermadeath = false;
@@ -524,7 +524,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             });
         }
 
-        if (config.luckySpaceRatio > 0) {
+        if (config.luckySpacePercentage > 0) {
             Ptr!Address luckySpaceTexturePtr = 0;
             Ptr!Address goldSpaceTexturePtr = 0;
             ubyte[] bSpaces, lSpaces, hSpaces;
@@ -619,7 +619,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (gpr.s3 == Space.Type.BLUE && gpr.s2 == 0) { // Cache blue and lucky space lists
                     auto blueSpaces = iota(data.spaceCount).filter!(e => data.spaces[e].type == Space.Type.BLUE).array;
                     state.customSpaces.length = data.spaceCount;
-                    long newLuckyCount = roundTo!long(blueSpaces.length * min(config.luckySpaceRatio, 1.0))
+                    long newLuckyCount = roundTo!long(blueSpaces.length * min(0.01 * config.luckySpacePercentage, 1.0))
                                        - state.customSpaces.count!(e => e == CustomSpace.LUCKY);
                     auto newBlues = blueSpaces.filter!(e => state.customSpaces[e] == CustomSpace.NORMAL).array.randomShuffle(random);
                     if (!newBlues.empty) {

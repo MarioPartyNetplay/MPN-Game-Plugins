@@ -21,6 +21,8 @@ class Config {
     int[Character] teams;
     bool randomBonus = false;
     string[BonusType] bonuses;
+    int itemSpacePercentage = 0;
+    int extraChanceSpaces = 0;
 
     this() {
         bonuses = [
@@ -49,6 +51,7 @@ class State {
         new PlayerState(),
         new PlayerState()
     ];
+    Space.Type[] spaces;
 }
 
 union Chain {
@@ -58,19 +61,23 @@ union Chain {
 
 union Space {
     static enum Type : ubyte {
-        BLUE         = 0x1,
-        RED          = 0x2,
-        EMPTY        = 0x3,
-        HAPPENING    = 0x4,
-        CHANCE       = 0x5,
-        ITEM         = 0x6,
-        BANK         = 0x7,
-        INTERSECTION = 0x8,
-        BATTLE       = 0x9,
-        BOWSER       = 0xC,
-        ARROW        = 0xD,
-        TOAD         = 0xE,
-        BABY_BOWSER  = 0xF
+        UNDEFINED   = 0xFF,
+        START       = 0x00,
+        BLUE        = 0x01,
+        RED         = 0x02,
+        INVIS_1     = 0x03,
+        HAPPENING   = 0x04,
+        CHANCE      = 0x05,
+        ITEM        = 0x06,
+        BANK        = 0x07,
+        INVIS_2     = 0x08,
+        BATTLE      = 0x09,
+        BOWSER      = 0x0C,
+        ARROW       = 0x0D,
+        STAR        = 0x0E,
+        BLACK_STAR  = 0x0F,
+        TOAD        = 0x10,
+        BABY_BOWSER = 0x11
     }
 
     ubyte[36] _data;
@@ -117,23 +124,27 @@ union Player {
 
 union Memory {
     ubyte[0x800000] ram;
-    mixin Field!(0x800FD2C0, Arr!(Player, 4), "players");
-    mixin Field!(0x800FA63C, Scene, "currentScene");
-    mixin Field!(0x800F93AE, ushort, "totalTurns");
-    mixin Field!(0x800F93B0, ushort, "currentTurn");
-    mixin Field!(0x800F93C6, ushort, "currentPlayerIndex");
-    mixin Field!(0x800DF645, ubyte, "numberOfRolls");
-    mixin Field!(0x800DF718, Ptr!Instruction, "booRoutinePtr");
-    mixin Field!(0x80064200, Instruction, "duelRoutine");
-    mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
     mixin Field!(0x80018B28, Instruction, "randomByteRoutine");
     mixin Field!(0x8004DE7C, Instruction, "openItemMenuRoutine");
+    mixin Field!(0x80064200, Instruction, "duelRoutine");
+    mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
     mixin Field!(0x800CC000, Arr!(ubyte, 10), "itemPrices");
+    mixin Field!(0x800DF645, ubyte, "numberOfRolls");
+    mixin Field!(0x800DF718, Ptr!Instruction, "booRoutinePtr");
     mixin Field!(0x800DF724, Ptr!Instruction, "plunderChestRoutinePtr");
-    mixin Field!(0x800F93AA, Board, "currentBoard");
+    mixin Field!(0x800E18A8, float, "mapX");
+    mixin Field!(0x800E18AC, float, "mapY");
+    mixin Field!(0x800E18D0, ushort, "spaceCount");
+    mixin Field!(0x800E18D2, ushort, "chainCount");
     mixin Field!(0x800E18D4, Ptr!Space, "spaces");
     mixin Field!(0x800E18D8, Ptr!Chain, "chains");
     mixin Field!(0x800F851A, byte, "itemMenuOpen");
+    mixin Field!(0x800F93AA, Board, "currentBoard");
+    mixin Field!(0x800F93AE, ushort, "totalTurns");
+    mixin Field!(0x800F93B0, ushort, "currentTurn");
+    mixin Field!(0x800F93C6, ushort, "currentPlayerIndex");
+    mixin Field!(0x800FA63C, Scene, "currentScene");
+    mixin Field!(0x800FD2C0, Arr!(Player, 4), "players");
 }
 
 void mallocPerm(size_t size, void delegate(uint ptr) callback) {
@@ -512,6 +523,51 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     case 0x606: setText("It's a four-way tie!!!\nAll four players are\n<" ~ getColor(bonus[BonusType.HAPPENING]) ~ ">" ~ config.bonuses[bonus[BonusType.HAPPENING]] ~ " Stars<RESET>, so no\n<YELLOW>Stars<RESET> will be awarded."); break;
                     default:
                 }
+            });
+        }
+
+        if (config.itemSpacePercentage > 0 || config.extraChanceSpaces > 0) {
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.START_BOARD) {
+                    state.spaces = [];
+                    saveState();
+                }
+            });
+
+            0x80054AE0.onExec({
+                if (!isBoardScene()) return;
+
+                if (data.spaceCount > state.spaces.length) {
+                    state.spaces.length = data.spaceCount;
+                    auto blueSpaces = iota(data.spaceCount).filter!(i => data.spaces[i].type == Space.Type.BLUE).array;
+
+                    long chanceCount = config.extraChanceSpaces
+                                     - blueSpaces.count!(i => state.spaces[i] == Space.Type.CHANCE);
+                    if (chanceCount > 0) {
+                        blueSpaces.filter!(i => state.spaces[i] == Space.Type.UNDEFINED)
+                                  .array.partialShuffle(chanceCount, random)[0..chanceCount]
+                                  .each!(i => data.spaces[i].type = state.spaces[i] = Space.Type.CHANCE);
+                    }
+
+                    long itemCount = roundTo!long(blueSpaces.length * min(0.01 * config.itemSpacePercentage, 1.0))
+                                   - blueSpaces.count!(i => state.spaces[i] == Space.Type.ITEM);
+                    if (itemCount > 0) {
+                        blueSpaces.filter!(i => state.spaces[i] == Space.Type.UNDEFINED)
+                                  .array.partialShuffle(itemCount, random)[0..itemCount]
+                                  .each!(i => data.spaces[i].type = state.spaces[i] = Space.Type.ITEM);
+                    }
+
+                    saveState();
+                }
+            });
+
+            0x80054940.onExec({
+                if (!isBoardScene()) return;
+                if (gpr.s2 >= state.spaces.length) return;
+                if (state.spaces[gpr.s2] == Space.Type.UNDEFINED) return;
+                if (gpr.v0 == Space.Type.STAR || gpr.v0 == Space.Type.BLACK_STAR) return;
+
+                gpr.v0 = state.spaces[gpr.s2];
             });
         }
     }
