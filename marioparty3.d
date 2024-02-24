@@ -32,6 +32,7 @@ class Config {
     bool singleUseBattleSpaces = false;
     bool unlockEverything = false;
     bool revealHiddenBlocksOnFinalTurn = false;
+    float mapScrollSpeedMultiplier = 1.0;
 
     this() {
         bonuses = [
@@ -804,6 +805,14 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             0x80035C00.onExecDone({ gpr.a0 |= 0xFF; });                        // Mini-Games (800CC0DE - 800CC0E5)
             0x800CC158.val!ubyte.onRead((ref ubyte flags) { flags |= 0x20; }); // Super Hard
             0x800CC159.val!ubyte.onRead((ref ubyte flags) { flags |= 0x02; }); // Waluigi's Island
+        }
+
+        if (config.mapScrollSpeedMultiplier != 1.0) {
+            0x80100350.onExec({
+                if (!isBoardScene()) return;
+
+                fpr.f12 *= config.mapScrollSpeedMultiplier;
+            });
         }
     }
 }

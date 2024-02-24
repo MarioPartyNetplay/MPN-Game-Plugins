@@ -23,6 +23,7 @@ class Config {
     string[BonusType] bonuses;
     int itemSpacePercentage = 0;
     int extraChanceSpaces = 0;
+    float mapScrollSpeedMultiplier = 1.0;
 
     this() {
         bonuses = [
@@ -568,6 +569,14 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                 if (gpr.v0 == Space.Type.STAR || gpr.v0 == Space.Type.BLACK_STAR) return;
 
                 gpr.v0 = state.spaces[gpr.s2];
+            });
+        }
+
+        if (config.mapScrollSpeedMultiplier != 1.0) {
+            0x80067944.onExec({
+                if (!isBoardScene()) return;
+
+                fpr.f12 *= config.mapScrollSpeedMultiplier;
             });
         }
     }
