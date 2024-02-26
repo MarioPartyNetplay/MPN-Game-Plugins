@@ -700,9 +700,10 @@ extern (C) {
 
     export void Input(int port, InputData* input) {
         if (*input && *input != previous[port]) {
-            // Choose a random bit to flip in the state of the RNG by hashing the input, port, and frame
-            ubyte bit = SplitMix64.hash((frame << 34) | (cast(ulong)port << 32) | *input) >> 56;
-            random.state[bit/64] ^= 1UL << (bit%64);
+            // Use the frame, port, and input to flip a random bit in the state of the RNG
+            auto sm64 = SplitMix64((frame << 34) | (cast(ulong)port << 32) | *input);
+            auto pos = uniform(0, 256, sm64);
+            random.state[pos / 64] ^= 1UL << (pos % 64);
         }
         previous[port] = *input;
 
