@@ -247,8 +247,6 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene == Scene.START_BOARD) {
                     state.miniGameQueue.clear();
-                    state.itemGameQueue.clear();
-                    state.duelGameQueue.clear();
                     saveState();
                 }
             });
@@ -466,6 +464,14 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.randomItemAndDuelMiniGames) {
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.START_BOARD) {
+                    state.itemGameQueue.clear();
+                    state.duelGameQueue.clear();
+                    saveState();
+                }
+            });
+
             data.currentBoard.onRead((ref Board board, Address pc) {
                 if (!isBoardScene()) return;
 
