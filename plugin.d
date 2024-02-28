@@ -343,14 +343,19 @@ struct ShuffleQueue(T) {
     }
 
     @property T front() const {
-        return queue[min(index, $)];
+        return queue[min(index, $ - 1)];
     }
 
     void popFront(RandomGen)(ref RandomGen gen) {
-        if (++index >= queue.length) {
-            queue.distanceShuffleUniform(queue.length / 2, gen);
-            index = 0;
+        if (++index < queue.length) return;
+
+        if (queue.length >= 50) {
+            queue.distanceShuffle((queue.length - 1) / 2, gen);
+        } else if (queue.length >= 1) {
+            queue.distanceShuffleUniform((queue.length - 1) / 2, gen);
         }
+
+        index = 0;
     }
 
     T next(RandomGen)(ref RandomGen gen) {
