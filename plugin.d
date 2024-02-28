@@ -92,21 +92,21 @@ JSONValue toJSON(T)(const T arr) if (isArray!T && !isSomeString!T) {
     return JSONValue(arr.map!(e => e.toJSON()).array);
 }
 JSONValue toJSON(T)(const T asc) if (isAssociativeArray!T) {
-    JSONValue result;
+    auto result = parseJSON("{}");
     foreach (ref k, ref v; asc) {
         result[k.to!string] = v.toJSON();
     }
     return result;
 }
 JSONValue toJSON(T)(const ref T agg) if (is(T == struct)) {
-    JSONValue result;
+    auto result = parseJSON("{}");
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
         result[k] = v.toJSON();
     }
     return result;
 }
-JSONValue toJSON(T)(const T agg, JSONValue result = JSONValue()) if (is(T == class)) {
+JSONValue toJSON(T)(const T agg, JSONValue result = parseJSON("{}")) if (is(T == class)) {
     if (agg is null) return JSONValue(null);
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
