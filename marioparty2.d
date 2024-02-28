@@ -10,6 +10,7 @@ import std.conv;
 import std.random;
 import std.stdio;
 import std.string;
+import std.traits;
 
 class Config {
     bool alwaysDuel = false;
@@ -24,6 +25,8 @@ class Config {
     int itemSpacePercentage = 0;
     int extraChanceSpaces = 0;
     float mapScrollSpeedMultiplier = 1.0;
+    bool preventRepeatMiniGames = false;
+    MiniGame[] blockedMiniGames;
 
     this() {
         bonuses = [
@@ -52,6 +55,9 @@ class State {
         new PlayerState(),
         new PlayerState()
     ];
+    MiniGame[][MiniGameType] miniGameQueue;
+    Board[] itemGameQueue;
+    Board[] duelGameQueue;
     Space.Type[] spaces;
 }
 
@@ -131,6 +137,7 @@ union Memory {
     mixin Field!(0x80064478, Instruction, "duelCancelRoutine");
     mixin Field!(0x800CC000, Arr!(ubyte, 10), "itemPrices");
     mixin Field!(0x800DF645, ubyte, "numberOfRolls");
+    mixin Field!(0x800DF6C0, Arr!(MiniGame, 5), "miniGameRoulette");
     mixin Field!(0x800DF718, Ptr!Instruction, "booRoutinePtr");
     mixin Field!(0x800DF724, Ptr!Instruction, "plunderChestRoutinePtr");
     mixin Field!(0x800E18A8, float, "mapX");
@@ -235,6 +242,44 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
 
     override void onStart() {
         super.onStart();
+
+        if (config.preventRepeatMiniGames || config.blockedMiniGames.length > 0) {
+            data.currentScene.onWrite((ref Scene scene) {
+                if (scene == Scene.START_BOARD) {
+                    state.miniGameQueue.clear();
+                    state.itemGameQueue = [];
+                    state.duelGameQueue = [];
+                    saveState();
+                }
+            });
+            // Populate mini-game roulette
+            0x8004AFA8.onExec({
+                if (!isBoardScene()) return;
+                0x8004AFEC.val!Instruction = NOP;
+                0x8004B044.val!Instruction = NOP;
+                0x8004B0F0.val!Instruction = NOP;
+                0x8004B140.val!Instruction = NOP;
+                if (gpr.s0 == 0) {
+                    auto type = (cast(MiniGame)gpr.v0).type;
+                    auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
+                    auto queue = state.miniGameQueue.require(type, list.array.randomShuffle(random) ~ MiniGame._SHUFFLE)
+                                                    .remove!(g => config.blockedMiniGames.canFind(g));
+                    if (queue.front == MiniGame._SHUFFLE) {
+                        queue.popFront();
+                        queue.distanceShuffleUniform(queue.length / 2, random);
+                        queue ~= MiniGame._SHUFFLE;
+                    }
+                    auto game = queue.front;
+                    auto altCount = (0x800CBD10 + gpr.s2).val!ubyte - 1;
+                    auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
+                    roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
+                    0x8004A1FC.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
+                    state.miniGameQueue[type] = (queue[1..$] ~ queue.front);
+                    saveState();
+                }
+                gpr.v0 = data.miniGameRoulette[gpr.s0];
+            });
+        }
 
         if (config.teamMode) {
             data.duelRoutine.addr.onExec({
@@ -430,14 +475,31 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
         if (config.randomItemAndDuelMiniGames) {
             data.currentBoard.onRead((ref Board board, Address pc) {
                 if (!isBoardScene()) return;
-                switch (pc) {
-                    case 0x80064574: // Duel Mini-Game
-                    case 0x80066428: // Item Mini-Game
-                        board = random.uniform!Board;
-                        break;
-                    default:
-                        break;
+
+                Board nextBoard(ref Board[] queue) {
+                    if (queue.empty) {
+                        queue = [EnumMembers!Board].filter!(b => b != Board._SHUFFLE).array.randomShuffle(random) ~ Board._SHUFFLE;
+                    }
+
+                    if (queue.front == Board._SHUFFLE) {
+                        queue.popFront();
+                        queue.distanceShuffleUniform(queue.length / 2, random);
+                        queue ~= Board._SHUFFLE;
+                    }
+
+                    queue ~= queue.front;
+                    queue.popFront();
+
+                    return queue.back;
                 }
+
+                switch (pc) {
+                    case 0x80064574: board = nextBoard(state.duelGameQueue); break;
+                    case 0x80066428: board = nextBoard(state.itemGameQueue); break;
+                    default: return;
+                }
+
+                saveState();
             });
         }
 
@@ -638,31 +700,254 @@ string getDescription(BonusType type) {
 }
 
 enum Board : ushort {
-    WESTERN = 0,
-    PIRATE  = 1,
-    HORROR  = 2,
-    SPACE   = 3,
-    MYSTERY = 4,
-    BOWSER  = 5
+    WESTERN  =   0,
+    PIRATE   =   1,
+    HORROR   =   2,
+    SPACE    =   3,
+    MYSTERY  =   4,
+    BOWSER   =   5,
+    _SHUFFLE = 255,
 }
 
 enum Item : byte {
-    NONE             = -1,
-    MUSHROOM         =  0,
-    SKELETON_KEY     =  1,
-    PLUNDER_CHEST    =  2,
-    BOWSER_BOMB      =  3,
-    DUELING_GLOVE    =  4,
-    WARP_BLOCK       =  5,
-    GOLDEN_MUSHROOM  =  6,
-    BOO_BELL         =  7,
-    BOWSER_SUIT      =  8,
-    MAGIC_LAMP       =  9
+    NONE            = -1,
+    MUSHROOM        =  0,
+    SKELETON_KEY    =  1,
+    PLUNDER_CHEST   =  2,
+    BOWSER_BOMB     =  3,
+    DUELING_GLOVE   =  4,
+    WARP_BLOCK      =  5,
+    GOLDEN_MUSHROOM =  6,
+    BOO_BELL        =  7,
+    BOWSER_SUIT     =  8,
+    MAGIC_LAMP      =  9
+}
+
+enum MiniGameType {
+    ONE_V_THREE,
+    TWO_V_TWO,
+    FOUR_PLAYER,
+    BATTLE,
+    DUEL,
+    ITEM,
+    SPECIAL
+}
+
+enum MiniGame : ubyte {
+    BOWSER_SLOTS        =  1,
+    ROLL_OUT_THE_BARELS =  2,
+    COFFIN_CONGESTION   =  3,
+    HAMMER_SLAMMER      =  4,
+    GIVE_ME_A_BRAKE     =  5,
+    MALLET_GO_ROUND     =  6,
+    GRAB_BAG            =  7,
+    BUMPER_BALLOON_CARS =  8,
+    RAKE_EM_IN          =  9,
+    DAY_AT_THE_RACES    =  11,
+    FACE_LIFT           =  12,
+    CRAZY_CUTTERS       =  13,
+    HOT_BOB_OMB         =  14,
+    BOWL_OVER           =  15,
+    RAINBOW_RUN         =  16,
+    CRANE_GAME          =  17,
+    MOVE_TO_THE_MUSIC   =  18,
+    BOB_OMB_BARRAGE     =  19,
+    LOOK_AWAY           =  20,
+    SHOCK_DROP_OR_ROLL  =  21,
+    LIGHTS_OUT          =  22,
+    FILET_RELAY         =  23,
+    ARCHER_IVAL         =  24,
+    TOAD_BANDSTAND      =  26,
+    BOBSLED_RUN         =  27,
+    HANDCAR_HAVOC       =  28,
+    BALLOON_BURST       =  30,
+    SKY_PILOTS          =  31,
+    SPEED_HOCKEY        =  32,
+    CAKE_FACTORY        =  33,
+    DUNGEON_DASH        =  35,
+    MAGNET_CARTA        =  36,
+    LAVA_TILE_ISLE      =  37,
+    HOT_ROPE_JUMP       =  38,
+    SHELL_SHOCKED       =  39,
+    TOAD_IN_THE_BOX     =  40,
+    MECHA_MARATHON      =  41,
+    ROLL_CALL           =  42,
+    ABANDON_SHIP        =  43,
+    PLATFORM_PERIL      =  44,
+    TOTEM_POLE_POUND    =  45,
+    BUMPER_BALLS        =  46,
+    BOMBS_AWAY          =  48,
+    TIPSY_TOURNEY       =  49,
+    HONEYCOMB_HAVOC     =  50,
+    HEXAGON_HEAT        =  51,
+    SKATEBOARD_SCAMPER  =  52,
+    SLOT_CAR_DERBY      =  53,
+    SHY_GUY_SAYS        =  54,
+    SNEAK_N_SNORE       =  55,
+    DRIVERS_ED          =  57,
+    CHANCE_TIME         =  58,
+    QUICK_DRAW_CORKS    =  59,
+    SABER_SLASHES       =  60,
+    MUSHROOM_BREW       =  61,
+    TIME_BOMB           =  62,
+    PSYCHIC_SAFARI      =  63,
+    ROCK_PAPER_MARIO    =  64,
+    BOWSERS_BIG_BLAST   =  65,
+    LOONEY_LUMBERJACKS  =  66,
+    TORPEDO_TARGETS     =  67,
+    DESTRUCTION_DUET    =  68,
+    DIZZY_DANCING       =  69,
+    TILE_DRIVER         =  70,
+    QUICKSAND_CACHE     =  71,
+    DEEP_SEA_SALVAGE    =  72,
+    _SHUFFLE            = 255
+}
+
+MiniGameType type(MiniGame game) {
+    switch (game) {
+        case MiniGame.LAVA_TILE_ISLE:
+        case MiniGame.HOT_ROPE_JUMP:
+        case MiniGame.SHELL_SHOCKED:
+        case MiniGame.TOAD_IN_THE_BOX:
+        case MiniGame.MECHA_MARATHON:
+        case MiniGame.ROLL_CALL:
+        case MiniGame.ABANDON_SHIP:
+        case MiniGame.PLATFORM_PERIL:
+        case MiniGame.TOTEM_POLE_POUND:
+        case MiniGame.BUMPER_BALLS:
+        case MiniGame.BOMBS_AWAY:
+        case MiniGame.TIPSY_TOURNEY:
+        case MiniGame.HONEYCOMB_HAVOC:
+        case MiniGame.HEXAGON_HEAT:
+        case MiniGame.SKATEBOARD_SCAMPER:
+        case MiniGame.SLOT_CAR_DERBY:
+        case MiniGame.SHY_GUY_SAYS:
+        case MiniGame.SNEAK_N_SNORE:
+        case MiniGame.DIZZY_DANCING:
+        case MiniGame.TILE_DRIVER:
+        case MiniGame.DEEP_SEA_SALVAGE:
+            return MiniGameType.FOUR_PLAYER;
+
+        case MiniGame.BOWL_OVER:
+        case MiniGame.RAINBOW_RUN:
+        case MiniGame.CRANE_GAME:
+        case MiniGame.MOVE_TO_THE_MUSIC:
+        case MiniGame.BOB_OMB_BARRAGE:
+        case MiniGame.LOOK_AWAY:
+        case MiniGame.SHOCK_DROP_OR_ROLL:
+        case MiniGame.LIGHTS_OUT:
+        case MiniGame.FILET_RELAY:
+        case MiniGame.ARCHER_IVAL:
+        case MiniGame.QUICKSAND_CACHE:
+            return MiniGameType.ONE_V_THREE;
+
+        case MiniGame.TOAD_BANDSTAND:
+        case MiniGame.BOBSLED_RUN:
+        case MiniGame.HANDCAR_HAVOC:
+        case MiniGame.BALLOON_BURST:
+        case MiniGame.SKY_PILOTS:
+        case MiniGame.SPEED_HOCKEY:
+        case MiniGame.CAKE_FACTORY:
+        case MiniGame.DUNGEON_DASH:
+        case MiniGame.MAGNET_CARTA:
+        case MiniGame.LOONEY_LUMBERJACKS:
+        case MiniGame.TORPEDO_TARGETS:
+        case MiniGame.DESTRUCTION_DUET:
+            return MiniGameType.TWO_V_TWO;
+
+        case MiniGame.GRAB_BAG:
+        case MiniGame.BUMPER_BALLOON_CARS:
+        case MiniGame.RAKE_EM_IN:
+        case MiniGame.DAY_AT_THE_RACES:
+        case MiniGame.HOT_BOB_OMB:
+        case MiniGame.FACE_LIFT:
+        case MiniGame.CRAZY_CUTTERS:
+        case MiniGame.BOWSERS_BIG_BLAST:
+            return MiniGameType.BATTLE;
+
+        case MiniGame.BOWSER_SLOTS:
+        case MiniGame.ROLL_OUT_THE_BARELS:
+        case MiniGame.COFFIN_CONGESTION:
+        case MiniGame.HAMMER_SLAMMER:
+        case MiniGame.GIVE_ME_A_BRAKE:
+        case MiniGame.MALLET_GO_ROUND:
+            return MiniGameType.ITEM;
+
+        case MiniGame.QUICK_DRAW_CORKS:
+        case MiniGame.SABER_SLASHES:
+        case MiniGame.MUSHROOM_BREW:
+        case MiniGame.TIME_BOMB:
+        case MiniGame.PSYCHIC_SAFARI:
+        case MiniGame.ROCK_PAPER_MARIO:
+            return MiniGameType.DUEL;
+
+        default:
+            return MiniGameType.SPECIAL;
+    }
 }
 
 enum Scene : uint {
     BOOT                =   0,
+    BOWSER_SLOTS        =   1,
+    ROLL_OUT_THE_BARELS =   2,
+    COFFIN_CONGESTION   =   3,
+    HAMMER_SLAMMER      =   4,
+    GIVE_ME_A_BRAKE     =   5,
+    MALLET_GO_ROUND     =   6,
+    GRAB_BAG            =   7,
+    LAVA_TILE_ISLE      =   8,
+    BUMPER_BALLOON_CARS =   9,
+    RAKE_EM_IN          =  10,
+    DAY_AT_THE_RACES    =  11,
+    HOT_ROPE_JUMP       =  12,
+    HOT_BOB_OMB         =  13,
+    BOWL_OVER           =  14,
+    RAINBOW_RUN         =  15,
+    CRANE_GAME          =  16,
+    MOVE_TO_THE_MUSIC   =  17,
+    BOB_OMB_BARRAGE     =  18,
+    LOOK_AWAY           =  19,
+    SHOCK_DROP_OR_ROLL  =  20,
+    LIGHTS_OUT          =  21,
+    FILET_RELAY         =  22,
+    ARCHER_IVAL         =  23,
+    TOAD_BANDSTAND      =  24,
+    BOBSLED_RUN         =  25,
+    HANDCAR_HAVOC       =  26,
+    BALLOON_BURST       =  27,
+    SKY_PILOTS          =  28,
+    SPEED_HOCKEY        =  29,
+    CAKE_FACTORY        =  30,
+    DUNGEON_DASH        =  31,
+    MAGNET_CARTA        =  32,
+    FACE_LIFT           =  33,
+    SHELL_SHOCKED       =  34,
+    CRAZY_CUTTERS       =  35,
+    TOAD_IN_THE_BOX     =  36,
+    MECHA_MARATHON      =  37,
+    ROLL_CALL           =  38,
+    ABANDON_SHIP        =  39,
+    PLATFORM_PERIL      =  40,
+    TOTEM_POLE_POUND    =  41,
+    BUMPER_BALLS        =  42,
+    BOMBS_AWAY          =  43,
+    TIPSY_TOURNEY       =  44,
+    HONEYCOMB_HAVOC     =  45,
+    HEXAGON_HEAT        =  46,
+    SKATEBOARD_SCAMPER  =  47,
+    SLOT_CAR_DERBY      =  48,
+    SHY_GUY_SAYS        =  49,
+    SNEAK_N_SNORE       =  50,
+    DRIVERS_ED          =  51,
     CHANCE_TIME         =  52,
+    LOONEY_LUMBERJACKS  =  53,
+    DIZZY_DANCING       =  54,
+    TILE_DRIVER         =  55,
+    QUICKSAND_CACHE     =  56,
+    BOWSERS_BIG_BLAST   =  57,
+    TORPEDO_TARGETS     =  58,
+    DESTRUCTION_DUET    =  59,
+    DEEP_SEA_SALVAGE    =  60,
     TRANSITION          =  61,
     WESTERN_LAND_BOARD  =  62,
     PIRATE_LAND_BOARD   =  65,
@@ -678,6 +963,7 @@ enum Scene : uint {
     GAME_SETUP          =  88,
     MAIN_MENU           =  91,
     MINI_GAME_LAND      =  92,
+    MINI_GAME_PARK      =  93,
     MINI_GAME_RULES_2   =  95,
     MINI_GAME_RULES     =  96,
     TITLE_SCREEN        =  98,
