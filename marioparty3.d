@@ -62,7 +62,7 @@ class State {
         new PlayerState(),
         new PlayerState()
     ];
-    MiniGame[][MiniGameType] miniGameQueue;
+    ShuffleQueue!MiniGame[MiniGameType] miniGameQueue;
     CustomSpace[] customSpaces;
     ubyte[] usedBattleSpaces;
 }
@@ -459,20 +459,13 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 0x800DFF78.val!Instruction = NOP;
                 if (gpr.s0 == 0) {
                     auto type = (cast(MiniGame)gpr.v0).type;
-                    auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
-                    auto queue = state.miniGameQueue.require(type, list.array.randomShuffle(random) ~ MiniGame._SHUFFLE)
-                                                    .remove!(g => config.blockedMiniGames.canFind(g));
-                    if (queue.front == MiniGame._SHUFFLE) {
-                        queue.popFront();
-                        queue.distanceShuffleUniform((queue.length-1)/2, random);
-                        queue ~= MiniGame._SHUFFLE;
-                    }
-                    auto game = queue.front;
+                    auto games = [EnumMembers!MiniGame].filter!(g => g.type == type).array;
+                    auto choices = games.filter!(g => !config.blockedMiniGames.canFind(g));
+                    auto game = state.miniGameQueue.require(type, ShuffleQueue!MiniGame(choices, random)).next(random);
                     auto altCount = (0x80100E18 + gpr.s2).val!ubyte - 1;
-                    auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
+                    auto roulette = game ~ games.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
                     roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x800DF120.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
-                    state.miniGameQueue[type] = (queue[1..$] ~ queue.front);
                     saveState();
                 }
                 gpr.v0 = data.miniGameRoulette[gpr.s0];
@@ -964,79 +957,78 @@ enum Scene : uint {
 }
 
 enum MiniGame : ubyte {
-    HAND_LINE_AND_SINKER     =   1,
-    COCONUT_CONK             =   2,
-    SPOTLIGHT_SWIM           =   3,
-    BOULDER_BALL             =   4,
-    CRAZY_COGS               =   5,
-    HIDE_AND_SNEAK           =   6,
-    RIDICULOUS_RELAY         =   7,
-    THWOMP_PULL              =   8,
-    RIVER_RAIDERS            =   9,
-    TIDAL_TOSS               =  10,
-    EATSA_PIZZA              =  11,
-    BABY_BOWSER_BROADSIDE    =  12,
-    PUMP_PUMP_AND_AWAY       =  13,
-    HYPER_HYDRANTS           =  14,
-    PICKING_PANIC            =  15,
-    COSMIC_COASTER           =  16,
-    PUDDLE_PADDLE            =  17,
-    ETCH_N_CATCH             =  18,
-    LOG_JAM                  =  19,
-    SLOT_SYNCH               =  20,
-    TREADMILL_GRILL          =  21,
-    TOADSTOOL_TITAN          =  22,
-    ACES_HIGH                =  23,
-    BOUNCE_N_TROUNCE         =  24,
-    ICE_RINK_RISK            =  25,
-    LOCKED_OUT               =  26,
-    CHIP_SHOT_CHALLENGE      =  27,
-    PARASOL_PLUMMET          =  28,
-    MESSY_MEMORY             =  29,
-    PICTURE_IMPERFECT        =  30,
-    MARIOS_PUZZLE_PARTY      =  31,
-    THE_BEAT_GOES_ON         =  32,
-    MPIQ                     =  33,
-    CURTAIN_CALL             =  34,
-    WATER_WHIRLED            =  35,
-    FRIGID_BRIDGES           =  36,
-    AWFUL_TOWER              =  37,
-    CHEEP_CHEEP_CHASE        =  38,
-    PIPE_CLEANERS            =  39,
-    SNOWBALL_SUMMIT          =  40,
-    ALL_FIRED_UP             =  41,
-    STACKED_DECK             =  42,
-    THREE_DOOR_MONTY         =  43,
-    ROCKIN_RACEWAY           =  44,
-    MERRY_GO_CHOMP           =  45,
-    SLAP_DOWN                =  46,
-    STORM_CHASERS            =  47,
-    EYE_SORE                 =  48,
-    VINE_WITH_ME             =  49,
-    POPGUN_PICK_OFF          =  50,
-    END_OF_THE_LINE          =  51,
-    BOWSER_TOSS              =  52,
-    BABY_BOWSER_BONKERS      =  53,
-    MOTOR_ROOTER             =  54,
-    SILLY_SCREWS             =  55,
-    CROWD_COVER              =  56,
-    TICK_TOCK_HOP            =  57,
-    FOWL_PLAY                =  58,
-    WINNERS_WHEEL            =  59,
-    HEY_BATTER_BATTER        =  60,
-    BOBBING_BOW_LOONS        =  61,
-    DORRIE_DIP               =  62,
-    SWINGING_WITH_SHARKS     =  63,
-    SWING_N_SWIPE            =  64,
-    CHANCE_TIME              =  65,
-    STARDUST_BATTLE          =  66,
-    GAME_GUYS_ROULETTE       =  67,
-    GAME_GUYS_LUCKY_7        =  68,
-    GAME_GUYS_MAGIC_BOXES    =  69,
-    GAME_GUYS_SWEET_SURPRISE =  70,
-    DIZZY_DINGHIES           =  71,
-    MARIOS_PUZZLE_PARTY_PRO  =  72,
-    _SHUFFLE                 = 255
+    HAND_LINE_AND_SINKER     =  1,
+    COCONUT_CONK             =  2,
+    SPOTLIGHT_SWIM           =  3,
+    BOULDER_BALL             =  4,
+    CRAZY_COGS               =  5,
+    HIDE_AND_SNEAK           =  6,
+    RIDICULOUS_RELAY         =  7,
+    THWOMP_PULL              =  8,
+    RIVER_RAIDERS            =  9,
+    TIDAL_TOSS               = 10,
+    EATSA_PIZZA              = 11,
+    BABY_BOWSER_BROADSIDE    = 12,
+    PUMP_PUMP_AND_AWAY       = 13,
+    HYPER_HYDRANTS           = 14,
+    PICKING_PANIC            = 15,
+    COSMIC_COASTER           = 16,
+    PUDDLE_PADDLE            = 17,
+    ETCH_N_CATCH             = 18,
+    LOG_JAM                  = 19,
+    SLOT_SYNCH               = 20,
+    TREADMILL_GRILL          = 21,
+    TOADSTOOL_TITAN          = 22,
+    ACES_HIGH                = 23,
+    BOUNCE_N_TROUNCE         = 24,
+    ICE_RINK_RISK            = 25,
+    LOCKED_OUT               = 26,
+    CHIP_SHOT_CHALLENGE      = 27,
+    PARASOL_PLUMMET          = 28,
+    MESSY_MEMORY             = 29,
+    PICTURE_IMPERFECT        = 30,
+    MARIOS_PUZZLE_PARTY      = 31,
+    THE_BEAT_GOES_ON         = 32,
+    MPIQ                     = 33,
+    CURTAIN_CALL             = 34,
+    WATER_WHIRLED            = 35,
+    FRIGID_BRIDGES           = 36,
+    AWFUL_TOWER              = 37,
+    CHEEP_CHEEP_CHASE        = 38,
+    PIPE_CLEANERS            = 39,
+    SNOWBALL_SUMMIT          = 40,
+    ALL_FIRED_UP             = 41,
+    STACKED_DECK             = 42,
+    THREE_DOOR_MONTY         = 43,
+    ROCKIN_RACEWAY           = 44,
+    MERRY_GO_CHOMP           = 45,
+    SLAP_DOWN                = 46,
+    STORM_CHASERS            = 47,
+    EYE_SORE                 = 48,
+    VINE_WITH_ME             = 49,
+    POPGUN_PICK_OFF          = 50,
+    END_OF_THE_LINE          = 51,
+    BOWSER_TOSS              = 52,
+    BABY_BOWSER_BONKERS      = 53,
+    MOTOR_ROOTER             = 54,
+    SILLY_SCREWS             = 55,
+    CROWD_COVER              = 56,
+    TICK_TOCK_HOP            = 57,
+    FOWL_PLAY                = 58,
+    WINNERS_WHEEL            = 59,
+    HEY_BATTER_BATTER        = 60,
+    BOBBING_BOW_LOONS        = 61,
+    DORRIE_DIP               = 62,
+    SWINGING_WITH_SHARKS     = 63,
+    SWING_N_SWIPE            = 64,
+    CHANCE_TIME              = 65,
+    STARDUST_BATTLE          = 66,
+    GAME_GUYS_ROULETTE       = 67,
+    GAME_GUYS_LUCKY_7        = 68,
+    GAME_GUYS_MAGIC_BOXES    = 69,
+    GAME_GUYS_SWEET_SURPRISE = 70,
+    DIZZY_DINGHIES           = 71,
+    MARIOS_PUZZLE_PARTY_PRO  = 72,
 }
 
 enum MiniGameType {

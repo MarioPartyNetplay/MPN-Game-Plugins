@@ -92,21 +92,21 @@ JSONValue toJSON(T)(const T arr) if (isArray!T && !isSomeString!T) {
     return JSONValue(arr.map!(e => e.toJSON()).array);
 }
 JSONValue toJSON(T)(const T asc) if (isAssociativeArray!T) {
-    auto result = parseJSON("{}");
+    JSONValue result;
     foreach (ref k, ref v; asc) {
         result[k.to!string] = v.toJSON();
     }
     return result;
 }
 JSONValue toJSON(T)(const ref T agg) if (is(T == struct)) {
-    JSONValue result = JSONValue("{}");
+    JSONValue result;
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
         result[k] = v.toJSON();
     }
     return result;
 }
-JSONValue toJSON(T)(const T agg, JSONValue result = parseJSON("{}")) if (is(T == class)) {
+JSONValue toJSON(T)(const T agg, JSONValue result = JSONValue()) if (is(T == class)) {
     if (agg is null) return JSONValue(null);
     foreach (i, ref v; agg.tupleof) {
         auto k = __traits(identifier, agg.tupleof[i]);
@@ -326,6 +326,47 @@ Range distanceShuffleUniform(Range, RandomGen)(Range r, size_t d, ref RandomGen 
     }
 
     return r;
+}
+
+struct ShuffleQueue(T) {
+    T[] queue;
+    size_t index;
+
+    this(Range, RandomGen)(Range r, ref RandomGen gen) {
+        initialize(r, gen);
+    }
+
+    void initialize(Range, RandomGen)(Range r, ref RandomGen gen) {
+        clear();
+        r.each!((ref e) { queue ~= e; });
+        queue.randomShuffle(gen);
+    }
+
+    @property T front() const {
+        return queue[min(index, $)];
+    }
+
+    void popFront(RandomGen)(ref RandomGen gen) {
+        if (++index >= queue.length) {
+            queue.distanceShuffleUniform(queue.length / 2, gen);
+            index = 0;
+        }
+    }
+
+    T next(RandomGen)(ref RandomGen gen) {
+        T f = front;
+        popFront(gen);
+        return f;
+    }
+
+    bool empty() const {
+        return queue.empty;
+    }
+
+    void clear() {
+        queue.length = 0;
+        index = 0;
+    }
 }
 
 union Register(T) if (T.sizeof == 4) {

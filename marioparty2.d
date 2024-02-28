@@ -55,9 +55,9 @@ class State {
         new PlayerState(),
         new PlayerState()
     ];
-    MiniGame[][MiniGameType] miniGameQueue;
-    Board[] itemGameQueue;
-    Board[] duelGameQueue;
+    ShuffleQueue!MiniGame[MiniGameType] miniGameQueue;
+    ShuffleQueue!Board itemGameQueue;
+    ShuffleQueue!Board duelGameQueue;
     Space.Type[] spaces;
 }
 
@@ -247,8 +247,8 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene == Scene.START_BOARD) {
                     state.miniGameQueue.clear();
-                    state.itemGameQueue = [];
-                    state.duelGameQueue = [];
+                    state.itemGameQueue.clear();
+                    state.duelGameQueue.clear();
                     saveState();
                 }
             });
@@ -261,20 +261,13 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                 0x8004B140.val!Instruction = NOP;
                 if (gpr.s0 == 0) {
                     auto type = (cast(MiniGame)gpr.v0).type;
-                    auto list = [EnumMembers!MiniGame].filter!(g => g.type == type);
-                    auto queue = state.miniGameQueue.require(type, list.array.randomShuffle(random) ~ MiniGame._SHUFFLE)
-                                                    .remove!(g => config.blockedMiniGames.canFind(g));
-                    if (queue.front == MiniGame._SHUFFLE) {
-                        queue.popFront();
-                        queue.distanceShuffleUniform(queue.length / 2, random);
-                        queue ~= MiniGame._SHUFFLE;
-                    }
-                    auto game = queue.front;
+                    auto games = [EnumMembers!MiniGame].filter!(g => g.type == type).array;
+                    auto choices = games.filter!(g => !config.blockedMiniGames.canFind(g));
+                    auto game = state.miniGameQueue.require(type, ShuffleQueue!MiniGame(choices, random)).next(random);
                     auto altCount = (0x800CBD10 + gpr.s2).val!ubyte - 1;
-                    auto roulette = game ~ list.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
+                    auto roulette = game ~ games.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
                     roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x8004A1FC.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
-                    state.miniGameQueue[type] = (queue[1..$] ~ queue.front);
                     saveState();
                 }
                 gpr.v0 = data.miniGameRoulette[gpr.s0];
@@ -476,26 +469,12 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             data.currentBoard.onRead((ref Board board, Address pc) {
                 if (!isBoardScene()) return;
 
-                Board nextBoard(ref Board[] queue) {
-                    if (queue.empty) {
-                        queue = [EnumMembers!Board].filter!(b => b != Board._SHUFFLE).array.randomShuffle(random) ~ Board._SHUFFLE;
-                    }
-
-                    if (queue.front == Board._SHUFFLE) {
-                        queue.popFront();
-                        queue.distanceShuffleUniform(queue.length / 2, random);
-                        queue ~= Board._SHUFFLE;
-                    }
-
-                    queue ~= queue.front;
-                    queue.popFront();
-
-                    return queue.back;
-                }
+                if (state.duelGameQueue.empty) state.duelGameQueue.initialize([EnumMembers!Board], random);
+                if (state.itemGameQueue.empty) state.itemGameQueue.initialize([EnumMembers!Board], random);
 
                 switch (pc) {
-                    case 0x80064574: board = nextBoard(state.duelGameQueue); break;
-                    case 0x80066428: board = nextBoard(state.itemGameQueue); break;
+                    case 0x80064574: board = state.duelGameQueue.next(random); break;
+                    case 0x80066428: board = state.itemGameQueue.next(random); break;
                     default: return;
                 }
 
@@ -700,13 +679,12 @@ string getDescription(BonusType type) {
 }
 
 enum Board : ushort {
-    WESTERN  =   0,
-    PIRATE   =   1,
-    HORROR   =   2,
-    SPACE    =   3,
-    MYSTERY  =   4,
-    BOWSER   =   5,
-    _SHUFFLE = 255,
+    WESTERN = 0,
+    PIRATE  = 1,
+    HORROR  = 2,
+    SPACE   = 3,
+    MYSTERY = 4,
+    BOWSER  = 5
 }
 
 enum Item : byte {
@@ -743,64 +721,63 @@ enum MiniGame : ubyte {
     GRAB_BAG            =  7,
     BUMPER_BALLOON_CARS =  8,
     RAKE_EM_IN          =  9,
-    DAY_AT_THE_RACES    =  11,
-    FACE_LIFT           =  12,
-    CRAZY_CUTTERS       =  13,
-    HOT_BOB_OMB         =  14,
-    BOWL_OVER           =  15,
-    RAINBOW_RUN         =  16,
-    CRANE_GAME          =  17,
-    MOVE_TO_THE_MUSIC   =  18,
-    BOB_OMB_BARRAGE     =  19,
-    LOOK_AWAY           =  20,
-    SHOCK_DROP_OR_ROLL  =  21,
-    LIGHTS_OUT          =  22,
-    FILET_RELAY         =  23,
-    ARCHER_IVAL         =  24,
-    TOAD_BANDSTAND      =  26,
-    BOBSLED_RUN         =  27,
-    HANDCAR_HAVOC       =  28,
-    BALLOON_BURST       =  30,
-    SKY_PILOTS          =  31,
-    SPEED_HOCKEY        =  32,
-    CAKE_FACTORY        =  33,
-    DUNGEON_DASH        =  35,
-    MAGNET_CARTA        =  36,
-    LAVA_TILE_ISLE      =  37,
-    HOT_ROPE_JUMP       =  38,
-    SHELL_SHOCKED       =  39,
-    TOAD_IN_THE_BOX     =  40,
-    MECHA_MARATHON      =  41,
-    ROLL_CALL           =  42,
-    ABANDON_SHIP        =  43,
-    PLATFORM_PERIL      =  44,
-    TOTEM_POLE_POUND    =  45,
-    BUMPER_BALLS        =  46,
-    BOMBS_AWAY          =  48,
-    TIPSY_TOURNEY       =  49,
-    HONEYCOMB_HAVOC     =  50,
-    HEXAGON_HEAT        =  51,
-    SKATEBOARD_SCAMPER  =  52,
-    SLOT_CAR_DERBY      =  53,
-    SHY_GUY_SAYS        =  54,
-    SNEAK_N_SNORE       =  55,
-    DRIVERS_ED          =  57,
-    CHANCE_TIME         =  58,
-    QUICK_DRAW_CORKS    =  59,
-    SABER_SLASHES       =  60,
-    MUSHROOM_BREW       =  61,
-    TIME_BOMB           =  62,
-    PSYCHIC_SAFARI      =  63,
-    ROCK_PAPER_MARIO    =  64,
-    BOWSERS_BIG_BLAST   =  65,
-    LOONEY_LUMBERJACKS  =  66,
-    TORPEDO_TARGETS     =  67,
-    DESTRUCTION_DUET    =  68,
-    DIZZY_DANCING       =  69,
-    TILE_DRIVER         =  70,
-    QUICKSAND_CACHE     =  71,
-    DEEP_SEA_SALVAGE    =  72,
-    _SHUFFLE            = 255
+    DAY_AT_THE_RACES    = 11,
+    FACE_LIFT           = 12,
+    CRAZY_CUTTERS       = 13,
+    HOT_BOB_OMB         = 14,
+    BOWL_OVER           = 15,
+    RAINBOW_RUN         = 16,
+    CRANE_GAME          = 17,
+    MOVE_TO_THE_MUSIC   = 18,
+    BOB_OMB_BARRAGE     = 19,
+    LOOK_AWAY           = 20,
+    SHOCK_DROP_OR_ROLL  = 21,
+    LIGHTS_OUT          = 22,
+    FILET_RELAY         = 23,
+    ARCHER_IVAL         = 24,
+    TOAD_BANDSTAND      = 26,
+    BOBSLED_RUN         = 27,
+    HANDCAR_HAVOC       = 28,
+    BALLOON_BURST       = 30,
+    SKY_PILOTS          = 31,
+    SPEED_HOCKEY        = 32,
+    CAKE_FACTORY        = 33,
+    DUNGEON_DASH        = 35,
+    MAGNET_CARTA        = 36,
+    LAVA_TILE_ISLE      = 37,
+    HOT_ROPE_JUMP       = 38,
+    SHELL_SHOCKED       = 39,
+    TOAD_IN_THE_BOX     = 40,
+    MECHA_MARATHON      = 41,
+    ROLL_CALL           = 42,
+    ABANDON_SHIP        = 43,
+    PLATFORM_PERIL      = 44,
+    TOTEM_POLE_POUND    = 45,
+    BUMPER_BALLS        = 46,
+    BOMBS_AWAY          = 48,
+    TIPSY_TOURNEY       = 49,
+    HONEYCOMB_HAVOC     = 50,
+    HEXAGON_HEAT        = 51,
+    SKATEBOARD_SCAMPER  = 52,
+    SLOT_CAR_DERBY      = 53,
+    SHY_GUY_SAYS        = 54,
+    SNEAK_N_SNORE       = 55,
+    DRIVERS_ED          = 57,
+    CHANCE_TIME         = 58,
+    QUICK_DRAW_CORKS    = 59,
+    SABER_SLASHES       = 60,
+    MUSHROOM_BREW       = 61,
+    TIME_BOMB           = 62,
+    PSYCHIC_SAFARI      = 63,
+    ROCK_PAPER_MARIO    = 64,
+    BOWSERS_BIG_BLAST   = 65,
+    LOONEY_LUMBERJACKS  = 66,
+    TORPEDO_TARGETS     = 67,
+    DESTRUCTION_DUET    = 68,
+    DIZZY_DANCING       = 69,
+    TILE_DRIVER         = 70,
+    QUICKSAND_CACHE     = 71,
+    DEEP_SEA_SALVAGE    = 72
 }
 
 MiniGameType type(MiniGame game) {
