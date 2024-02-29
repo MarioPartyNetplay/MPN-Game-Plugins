@@ -270,6 +270,8 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                 }
                 gpr.v0 = data.miniGameRoulette[gpr.s0];
             });
+            // Prevent the mini-game roulette from jumping backward
+            0x8004A4A8.onExec({ if (isBoardScene()) gpr.v0 = 1; });
         }
 
         if (config.teamMode) {
