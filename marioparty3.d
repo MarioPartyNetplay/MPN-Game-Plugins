@@ -33,6 +33,7 @@ class Config {
     bool unlockEverything = false;
     bool revealHiddenBlocksOnFinalTurn = false;
     float mapScrollSpeedMultiplier = 1.0;
+    bool increaseItemShopVariety = false;
 
     this() {
         bonuses = [
@@ -94,6 +95,7 @@ union Memory {
     mixin Field!(0x800FE29C, Instruction, "blueOrRedSpaceCoins");
     mixin Field!(0x80101780, uint, "chancePlayer1");
     mixin Field!(0x80101784, uint, "chancePlayer2");
+    mixin Field!(0x80101DE8, Arr!(ubyte, 27), "gamePhaseTable");
     mixin Field!(0x80102C08, Arr!(MiniGame, 5), "miniGameRoulette");
     mixin Field!(0x80102C58, Ptr!Instruction, "booRoutinePtr");
     mixin Field!(0x80105210, ushort, "spaceCount");
@@ -155,27 +157,27 @@ union Player {
 }
 
 union Space {
+    static enum Type : ubyte {
+        START     = 0x00,
+        BLUE      = 0x01,
+        RED       = 0x02,
+        INVISIBLE = 0x03,
+        HAPPENING = 0x04,
+        CHANCE    = 0x05,
+        ITEM      = 0x06,
+        BANK      = 0x07,
+        INVIS_2   = 0x08,
+        BATTLE    = 0x09,
+        UNKNOWN_1 = 0x0A,
+        UNKNOWN_2 = 0x0B,
+        BOWSER    = 0x0C,
+        ARROW     = 0x0D,
+        STAR      = 0x0E,
+        GAME_GUY  = 0x0F
+    }
+
     ubyte[0x24] _data;
     mixin Field!(0x01, Type, "type");
-
-    static enum Type : ubyte {
-        START     = 0x0,
-        BLUE      = 0x1,
-        RED       = 0x2,
-        INVISIBLE = 0x3,
-        HAPPENING = 0x4,
-        CHANCE    = 0x5,
-        ITEM      = 0x6,
-        BANK      = 0x7,
-        INVIS_2   = 0x8,
-        BATTLE    = 0x9,
-        UNKNOWN_1 = 0xA,
-        UNKNOWN_2 = 0xB,
-        BOWSER    = 0xC,
-        ARROW     = 0xD,
-        STAR      = 0xE,
-        GAME_GUY  = 0xF
-    }
 }
 
 union PlayerPanel {
@@ -320,6 +322,18 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 return true;
             default:
                 return isBoardScene(scene);
+        }
+    }
+
+    GamePhase getGamePhase() {
+        auto i = clamp(cast(int)data.totalTurns, 10, 50) / 5 - 2;
+
+        if (data.currentTurn < data.gamePhaseTable[3 * i]) {
+            return GamePhase.EARLY;
+        } else if (data.currentTurn < data.gamePhaseTable[3 * i + 1]) {
+            return GamePhase.MID;
+        } else {
+            return GamePhase.END;
         }
     }
 
@@ -807,6 +821,25 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 fpr.f12 *= config.mapScrollSpeedMultiplier;
             });
         }
+
+        if (config.increaseItemShopVariety) {
+            0x800EEA50.onExec({ // Return player rank
+                if (!isBoardScene()) return;
+
+                if ((gpr.ra + 12).val!Instruction != 0x00041840) return; // Player not at item shop
+                if ((gpr.ra + 16).val!Instruction != 0x00641821) return; // Player not at item shop
+                if ((gpr.ra + 20).val!Instruction != 0x00031880) return; // Player not at item shop
+                if ((gpr.ra + 24).val!Instruction != 0x00651821) return; // Player not at item shop
+
+                if (uniform!"[]"(1, 3, random) == 1) {
+                    final switch(getGamePhase()) {
+                        case GamePhase.EARLY:                                                         break;
+                        case GamePhase.MID: gpr.v0 = [0, 1]   .remove(min(gpr.v0, 1)).choice(random); break;
+                        case GamePhase.END: gpr.v0 = [0, 1, 2].remove(min(gpr.v0, 2)).choice(random); break;
+                    }
+                }
+            });
+        }
     }
 }
 
@@ -1081,6 +1114,12 @@ enum SFX {
     BEING_CHOSEN         = 0x02B4,
     TAUNT                = 0x02BD,
     SUPERSTAR            = 0x02C6
+}
+
+enum GamePhase {
+    EARLY = 0,
+    MID   = 1,
+    END   = 2
 }
 
 MiniGameType type(MiniGame game) {

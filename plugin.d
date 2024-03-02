@@ -263,7 +263,7 @@ Range frontDistanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen ge
     return r;
 }
 
-Range distanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
+Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
     if (r.length <= 1 || d == 0) return r;
 
     void dS(Range)(Range r) {
@@ -343,16 +343,16 @@ struct ShuffleQueue(T) {
     }
 
     @property T front() const {
-        return queue[min(index, $ - 1)];
+        return queue[min(index, $-1)];
     }
 
     void popFront(RandomGen)(ref RandomGen gen) {
         if (++index < queue.length) return;
 
         if (queue.length >= 50) {
-            queue.distanceShuffle((queue.length - 1) / 2, gen);
+            queue.distanceShuffleFast(queue.length / 2, gen);
         } else if (queue.length >= 1) {
-            queue.distanceShuffleUniform((queue.length - 1) / 2, gen);
+            queue.distanceShuffleUniform(queue.length / 2, gen);
         }
 
         index = 0;
