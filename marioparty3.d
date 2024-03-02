@@ -823,21 +823,40 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.increaseItemShopVariety) {
+            int rank = -1;
+
+            data.currentTurn.onRead((ref ubyte turn, Address pc) {
+                if (!isBoardScene()) return;
+                if ((pc + 32).val!Instruction != 0x0C03B164) return; // Not item shop
+
+                rank = -1;
+            });
+
             0x800EEA50.onExec({ // Return player rank
                 if (!isBoardScene()) return;
 
-                if ((gpr.ra + 12).val!Instruction != 0x00041840) return; // Player not at item shop
-                if ((gpr.ra + 16).val!Instruction != 0x00641821) return; // Player not at item shop
-                if ((gpr.ra + 20).val!Instruction != 0x00031880) return; // Player not at item shop
-                if ((gpr.ra + 24).val!Instruction != 0x00651821) return; // Player not at item shop
+                if ((gpr.ra + 12).val!Instruction != 0x00041840) return; // Not item shop
+                if ((gpr.ra + 16).val!Instruction != 0x00641821) return; // Not item shop
+                if ((gpr.ra + 20).val!Instruction != 0x00031880) return; // Not item shop
+                if ((gpr.ra + 24).val!Instruction != 0x00651821) return; // Not item shop
 
-                if (uniform!"[]"(1, 3, random) == 1) {
-                    final switch(getGamePhase()) {
-                        case GamePhase.EARLY:                                                         break;
-                        case GamePhase.MID: gpr.v0 = [0, 1]   .remove(min(gpr.v0, 1)).choice(random); break;
-                        case GamePhase.END: gpr.v0 = [0, 1, 2].remove(min(gpr.v0, 2)).choice(random); break;
+                if (gpr.s1 == GamePhase.EARLY && data.currentTurn >= 6) {
+                    gpr.s1 = GamePhase.MID;
+                }
+
+                if (rank == -1) {
+                    if (uniform!"[]"(1, 3, random) == 1) {
+                        switch (gpr.s1) {
+                            case GamePhase.MID: rank = [0, 1]   .remove(min(gpr.v0, 1)).choice(random); break;
+                            case GamePhase.END: rank = [0, 1, 2].remove(min(gpr.v0, 2)).choice(random); break;
+                            default:            rank = gpr.v0;                                          break;
+                        }
+                    } else {
+                        rank = gpr.v0;
                     }
                 }
+
+                gpr.v0 = rank;
             });
         }
     }
