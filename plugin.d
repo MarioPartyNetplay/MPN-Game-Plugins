@@ -253,18 +253,9 @@ double normal(Random)(ref Random r) @safe {
     return sqrt(-2 * log(u)) * cos(2 * PI * v);
 }
 
-Range frontDistanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
-    if (r.length <= 1 || d == 0) return r;
-
-    foreach (i, ref e; r[0..$-1]) {
-        swap(e, r[i..min($, i+d+1)].choice(gen));
-    }
-
-    return r;
-}
-
 Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
     if (r.length <= 1 || d == 0) return r;
+    if (d >= r.length - 1) return r.randomShuffle(gen);
 
     void dS(Range)(Range r) {
         auto w = min(d+1, r.length);
@@ -306,6 +297,7 @@ Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen
 
 Range distanceShuffleUniform(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
     if (r.length <= 1 || d == 0) return r;
+    if (d >= r.length - 1) return r.randomShuffle(gen);
 
     auto p = iota(r.length).array; // Positions
     auto q = iota(r.length).array; // Inverse Positions
@@ -326,6 +318,14 @@ Range distanceShuffleUniform(Range, RandomGen)(Range r, size_t d, ref RandomGen 
     }
 
     return r;
+}
+
+Range distanceShuffle(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
+    if (r.length < 50) {
+        return distanceShuffleUniform(r, d, gen);
+    } else {
+        return distanceShuffleFast(r, d, gen);
+    }
 }
 
 struct ShuffleQueue(T) {
@@ -349,10 +349,8 @@ struct ShuffleQueue(T) {
     void popFront(RandomGen)(ref RandomGen gen) {
         if (++index < queue.length) return;
 
-        if (queue.length >= 50) {
-            queue.distanceShuffleFast(queue.length / 2, gen);
-        } else if (queue.length >= 1) {
-            queue.distanceShuffleUniform(queue.length / 2, gen);
+        if (!queue.empty) {
+            distanceShuffle(queue, (queue.length-1)/2, gen);
         }
 
         index = 0;
