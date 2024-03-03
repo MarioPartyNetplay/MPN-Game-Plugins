@@ -37,7 +37,7 @@ class Config {
 
     this() {
         bonuses = [
-            BonusType.MINI_GAME: "Mini=Game",
+            BonusType.MINI_GAME: "Mini-Game",
             BonusType.COIN:      "Coin",
             BonusType.HAPPENING: "Happening",
             BonusType.RED:       "Unlucky",
@@ -186,24 +186,24 @@ union PlayerPanel {
 }
 
 immutable BONUS_TEXT = [
-    ["\x02\x0FMini=Game Star\x16\x19", "\x02\x0FMini=Game Stars\x16\x19", "has won the most coins\nin Mini=Games"],
-    ["\x07\x0FCoin Star\x16\x19",      "\x07\x0FCoin Stars\x16\x19",      "had the most\ncoins at any one time\nduring the game"],
-    ["\x05\x0FHappening Star\x16\x19", "\x05\x0FHappening Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"]
-];
+    ["<BLUE><BOLD>Mini-Game Star<NORMAL><RESET>",  "<BLUE><BOLD>Mini-Game Stars<NORMAL><RESET>",  "has won the most coins\nin Mini-Games"],
+    ["<YELLOW><BOLD>Coin Star<NORMAL><RESET>",     "<YELLOW><BOLD>Coin Stars<NORMAL><RESET>",     "had the most\ncoins at any one time\nduring the game"],
+    ["<GREEN><BOLD>Happening Star<NORMAL><RESET>", "<GREEN><BOLD>Happening Stars<NORMAL><RESET>", "landed on the most\n<GREEN><BOLD>? Spaces<NORMAL><RESET>"]
+].map!(e => e.map!(formatText).array).array;
 
 immutable BONUS_TEXT_REPLACEMENT = [
-    ["\x02\x0F$NAME Star\x16\x19", "\x02\x0F$NAME Stars\x16\x19", "has won the most coins\nin Mini=Games"],
-    ["\x07\x0F$NAME Star\x16\x19", "\x07\x0F$NAME Stars\x16\x19", "had the most\ncoins at any one time\nduring the game"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0F\xC3 Spaces\x16\x19"],
-    ["\x03\x0F$NAME Star\x16\x19", "\x03\x0F$NAME Stars\x16\x19", "landed on the most\n\x03\x0FRed Spaces\x16\x19"],
-    ["\x02\x0F$NAME Star\x16\x19", "\x02\x0F$NAME Stars\x16\x19", "landed on the most\n\x02\x0FBlue Spaces\x16\x19"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0F\xC2 Spaces\x16\x19"],
-    ["\x03\x0F$NAME Star\x16\x19", "\x03\x0F$NAME Stars\x16\x19", "landed on the most\n\x03\x0FBowser Spaces\x16\x19"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FBattle Spaces\x16\x19"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FItem Spaces\x16\x19"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FBank Spaces\x16\x19"],
-    ["\x05\x0F$NAME Star\x16\x19", "\x05\x0F$NAME Stars\x16\x19", "landed on the most\n\x05\x0FGame Guy Spaces\x16\x19"]
-];
+    ["<BLUE><BOLD>$NAME Star<NORMAL><RESET>",   "<BLUE><BOLD>$NAME Stars<NORMAL><RESET>",   "has won the most coins\nin Mini-Games"],
+    ["<YELLOW><BOLD>$NAME Star<NORMAL><RESET>", "<YELLOW><BOLD>$NAME Stars<NORMAL><RESET>", "had the most\ncoins at any one time\nduring the game"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>? Spaces<NORMAL><RESET>"],
+    ["<RED><BOLD>$NAME Star<NORMAL><RESET>",    "<RED><BOLD>$NAME Stars<NORMAL><RESET>",    "landed on the most\n<RED><BOLD>Red Spaces<NORMAL><RESET>"],
+    ["<BLUE><BOLD>$NAME Star<NORMAL><RESET>",   "<BLUE><BOLD>$NAME Stars<NORMAL><RESET>",   "landed on the most\n<BLUE><BOLD>Blue Spaces<NORMAL><RESET>"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>! Spaces<NORMAL><RESET>"],
+    ["<RED><BOLD>$NAME Star<NORMAL><RESET>",    "<RED><BOLD>$NAME Stars<NORMAL><RESET>",    "landed on the most\n<RED><BOLD>Bowser Spaces<NORMAL><RESET>"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Battle Spaces<NORMAL><RESET>"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Item Spaces<NORMAL><RESET>"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Bank Spaces<NORMAL><RESET>"],
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Game Guy Spaces<NORMAL><RESET>"]
+].map!(e => e.map!(formatText).array).array;
 
 void mallocPerm(size_t size, void delegate(uint ptr) callback) {
     0x80035864.jal(cast(ushort)size, callback);
@@ -222,7 +222,7 @@ void freeTemp(uint ptr, void delegate() callback) {
 }
 
 void showPlayerMessage(string message, byte character = -1) {
-    message ~= '\x00';
+    message = formatText(message ~ "<END><NUL>");
     gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
@@ -241,7 +241,7 @@ void showPlayerMessage(string message, byte character = -1) {
 }
 
 void showGlobalMessage(string message, byte character = -1) {
-    message ~= '\x00';
+    message = formatText(message ~ "<END><NUL>");
     gpr.sp -= cast(uint)(message.length + 0b111) & ~0b111;
     message.each!((i, c) { Ptr!char(gpr.sp)[i] = c; });
     gpr.sp -= 32;
@@ -362,19 +362,19 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             }
 
             if (gameText == "\x0B\x27\x85\x85\x85Board\x00\x00") {
-                gameText = "\x07" ~ data.currentTurn.to!string ~ " " ~ Char.SLASH ~ " " ~ data.totalTurns.to!string ~ "\x19\x00\x00";
+                gameText = formatText("<YELLOW>" ~ data.currentTurn.to!string ~ " / " ~ data.totalTurns.to!string ~ "<RESET><NUL><NUL>");
             }
 
             if (config.randomBonus && data.currentScene == Scene.FINISH_BOARD) {
                 gameText = gameText.replace("one\nstar", "one star")
-                                   .replace("\x02\x0F Mini=Game Star\x16\x19", " \x02\x0FMini=Game Star\x16\x19")
-                                   .replace("\x02\x0FMini=Game Star\x16 \x19", "\x02\x0FMini=Game Star\x16\x19 ");
+                                   .replace(formatText("<BLUE><BOLD> Mini-Game Star<NORMAL><RESET>"), formatText(" <BLUE><BOLD>Mini-Game Star<NORMAL><RESET>"))
+                                   .replace(formatText("<BLUE><BOLD>Mini-Game Star<NORMAL> <RESET>"), formatText("<BLUE><BOLD>Mini-Game Star<NORMAL><RESET> "));
 
                 foreach (i, ref bt; BONUS_TEXT) {
                     if (bt.any!(t => gameText.canFind(t))) {
                         foreach (j, ref t; bt) {
                             gameText = gameText.replace(t, BONUS_TEXT_REPLACEMENT[bonus[i]][j])
-                                               .replace("$NAME", config.bonuses[bonus[i]]);
+                                               .replace(formatText("$NAME"), formatText(config.bonuses[bonus[i]]));
                         }
                         break;
                     }
@@ -727,8 +727,8 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (!isBoardScene()) return;
                 if (data.currentTurn % INTERVAL != 0) return;
 
-                showGlobalMessage("          Bonus Mini=Game\xC2\n\n" ~
-                                  "               \x0F\x07Coins \x3E 2\x02\x16\xFF", 0x15);
+                showGlobalMessage("          Bonus Mini-Game!\n\n" ~
+                                  "               <BOLD><YELLOW>Coins × 2<RESET><NORMAL>", 0x15);
             });
         }
 
@@ -878,11 +878,6 @@ enum CustomSpace : byte {
     NORMAL = 0,
     BLUE   = 1,
     LUCKY  = 2
-}
-
-enum Char : ubyte {
-    SLASH = '\x5F',
-    COLON = '\x7B'
 }
 
 enum Item : ubyte {

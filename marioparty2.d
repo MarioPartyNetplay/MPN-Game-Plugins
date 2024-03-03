@@ -528,24 +528,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             });
 
             void setText(string text) {
-                text = text.replace("<BLACK>",  "\x01")
-                           .replace("<BLUE>",   "\x02")
-                           .replace("<RED>",    "\x03")
-                           .replace("<PINK>",   "\x04")
-                           .replace("<GREEN>",  "\x05")
-                           .replace("<CYAN>",   "\x06")
-                           .replace("<YELLOW>", "\x07")
-                           .replace("<1>",      "\x11")
-                           .replace("<2>",      "\x12")
-                           .replace("<3>",      "\x13")
-                           .replace("<RESET>",  "\x19")
-                           .replace('-',        '\x3D')
-                           .replace('\'',       '\x5C')
-                           .replace(',',        '\x82')
-                           .replace('.',        '\x85')
-                           .replace('!',        '\xC2')
-                           .replace('?',        '\xC3');
-                text ~= "\xFF\x00";
+                text = formatText(text ~ "<END><NUL>");
                 mallocTemp(text.length, (ptr) {
                     text.each!((i, c) { Ptr!char(ptr)[i] = c; });
                     gpr.a1 = ptr;

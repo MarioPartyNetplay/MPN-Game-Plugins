@@ -27,6 +27,33 @@ enum Character : ubyte {
     DAISY   = 7
 }
 
+string formatText(string text) pure {
+    return text.replace("<NUL>",    "\x00")
+               .replace("<BLACK>",  "\x01")
+               .replace("<BLUE>",   "\x02")
+               .replace("<RED>",    "\x03")
+               .replace("<PINK>",   "\x04")
+               .replace("<GREEN>",  "\x05")
+               .replace("<CYAN>",   "\x06")
+               .replace("<YELLOW>", "\x07")
+               .replace("<BOLD>",   "\x0F")
+               .replace("<1>",      "\x11")
+               .replace("<2>",      "\x12")
+               .replace("<3>",      "\x13")
+               .replace("<NORMAL>", "\x16")
+               .replace("<RESET>",  "\x19")
+               .replace("-",        "\x3D")
+               .replace("×",        "\x3E")
+               .replace("'",        "\x5C")
+               .replace("/",        "\x5F")
+               .replace(":",        "\x7B")
+               .replace(",",        "\x82")
+               .replace(".",        "\x85")
+               .replace("!",        "\xC2")
+               .replace("?",        "\xC3")
+               .replace("<END>",    "\xFF");
+}
+
 class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateType) {
     alias typeof(MemoryType.currentScene) Scene;
     alias typeof(MemoryType.players.front) PlayerData;
