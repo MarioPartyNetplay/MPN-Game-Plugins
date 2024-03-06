@@ -253,6 +253,18 @@ double normal(Random)(ref Random r) @safe {
     return sqrt(-2 * log(u)) * cos(2 * PI * v);
 }
 
+T weighted(T, W, Random)(ref const W[T] options, ref Random r) {
+    auto keys = options.keys;
+    double random = r.uniform01() * options.values.sum();
+    double weight = 0;
+    foreach (ref const T e; keys) {
+        if ((weight += options[e]) > random) {
+            return e;
+        }
+    }
+    return keys.back;
+}
+
 Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen) if (isRandomAccessRange!Range && isUniformRNG!RandomGen) {
     if (r.length <= 1 || d == 0) return r;
     if (d >= r.length - 1) return r.randomShuffle(gen);
@@ -519,6 +531,11 @@ void onExec(Address address, void delegate() callback) {
     onExec(address, (Address) { callback(); });
 }
 
+bool clearExec(Address address) {
+    assert(address % 4 == 0);
+    return executeHandlers.remove(address);
+}
+
 void onExecOnce(Address address, void delegate(Address) callback) {
     assert(address % 4 == 0);
     executeOnceHandlers[address] ~= callback;
@@ -527,6 +544,11 @@ void onExecOnce(Address address, void delegate(Address) callback) {
 
 void onExecOnce(Address address, void delegate() callback) {
     onExecOnce(address, (Address) { callback(); });
+}
+
+bool clearExecOnce(Address address) {
+    assert(address % 4 == 0);
+    return executeOnceHandlers.remove(address);
 }
 
 void onExecDone(Address address, void delegate(Address) callback) {
@@ -539,6 +561,11 @@ void onExecDone(Address address, void delegate() callback) {
     onExecDone(address, (Address) { callback(); });
 }
 
+bool clearExecDone(Address address) {
+    assert(address % 4 == 0);
+    return executeDoneHandlers.remove(address);
+}
+
 void onExecDoneOnce(Address address, void delegate(Address) callback) {
     assert(address % 4 == 0);
     executeDoneOnceHandlers[address] ~= callback;
@@ -547,6 +574,11 @@ void onExecDoneOnce(Address address, void delegate(Address) callback) {
 
 void onExecDoneOnce(Address address, void delegate() callback) {
     onExecDoneOnce(address, (Address) { callback(); });
+}
+
+bool clearExecDoneOnce(Address address) {
+    assert(address % 4 == 0);
+    return executeDoneOnceHandlers.remove(address);
 }
 
 void onRead(T)(ref T r, void delegate() callback)               { onRead!T(r, (ref T v, Address p, Address a) { callback(); }); }
@@ -596,6 +628,12 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
             callback(v0);
         }
     });
+}
+
+Address searchMemory(T)(immutable T[] data) {
+    auto mem = (cast(T*)memory.ptr)[0..memory.length / T.sizeof];
+    auto index = mem.countUntil(data);
+    return index == -1 ? 0 : cast(Address)(0x80000000 + index * T.sizeof);
 }
 
 void info(T...)(T args) {
