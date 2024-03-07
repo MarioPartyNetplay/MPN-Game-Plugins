@@ -880,27 +880,27 @@ enum CustomSpace : byte {
     LUCKY  = 2
 }
 
-enum Item : ubyte {
-    NONE             = 0xFF,
-    MUSHROOM         = 0x00,
-    SKELETON_KEY     = 0x01,
-    POISON_MUSHROOM  = 0x02,
-    REVERSE_MUSHROOM = 0x03,
-    CELLULAR_SHOPPER = 0x04,
-    WARP_BLOCK       = 0x05,
-    PLUNDER_CHEST    = 0x06,
-    BOWSER_PHONE     = 0x07,
-    DUELING_GLOVE    = 0x08,
-    LUCKY_LAMP       = 0x09,
-    GOLDEN_MUSHROOM  = 0x0A,
-    BOO_BELL         = 0x0B,
-    BOO_REPELLANT    = 0x0C,
-    BOWSER_SUIT      = 0x0D,
-    MAGIC_LAMP       = 0x0E,
-    KOOPA_KARD       = 0x0F,
-    BARTER_BOX       = 0x10,
-    LUCKY_CHARM      = 0x11,
-    WACKY_WATCH      = 0x12
+enum Item : byte {
+    NONE             = -1,
+    MUSHROOM         =  0,
+    SKELETON_KEY     =  1,
+    POISON_MUSHROOM  =  2,
+    REVERSE_MUSHROOM =  3,
+    CELLULAR_SHOPPER =  4,
+    WARP_BLOCK       =  5,
+    PLUNDER_CHEST    =  6,
+    BOWSER_PHONE     =  7,
+    DUELING_GLOVE    =  8,
+    LUCKY_LAMP       =  9,
+    GOLDEN_MUSHROOM  = 10,
+    BOO_BELL         = 11,
+    BOO_REPELLANT    = 12,
+    BOWSER_SUIT      = 13,
+    MAGIC_LAMP       = 14,
+    KOOPA_KARD       = 15,
+    BARTER_BOX       = 16,
+    LUCKY_CHARM      = 17,
+    WACKY_WATCH      = 18
 }
 
 enum Scene : uint {

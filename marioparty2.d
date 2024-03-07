@@ -69,29 +69,29 @@ union Chain {
 }
 
 union Space {
-    static enum Type : ubyte {
-        UNDEFINED   = 0xFF,
-        START       = 0x00,
-        BLUE        = 0x01,
-        RED         = 0x02,
-        INVIS_1     = 0x03,
-        HAPPENING   = 0x04,
-        CHANCE      = 0x05,
-        ITEM        = 0x06,
-        BANK        = 0x07,
-        INVIS_2     = 0x08,
-        BATTLE      = 0x09,
-        UNKNOWN_1   = 0x0A,
-        UNKNOWN_2   = 0x0B,
-        BOWSER      = 0x0C,
-        ARROW       = 0x0D,
-        STAR        = 0x0E,
-        BLACK_STAR  = 0x0F,
-        TOAD        = 0x10,
-        BABY_BOWSER = 0x11,
+    static enum Type : byte {
+        UNDEFINED   = -1,
+        START       =  0,
+        BLUE        =  1,
+        RED         =  2,
+        INVIS_1     =  3,
+        HAPPENING   =  4,
+        CHANCE      =  5,
+        ITEM        =  6,
+        BANK        =  7,
+        INVIS_2     =  8,
+        BATTLE      =  9,
+        UNKNOWN_1   = 10,
+        UNKNOWN_2   = 11,
+        BOWSER      = 12,
+        ARROW       = 13,
+        STAR        = 14,
+        BLACK_STAR  = 15,
+        TOAD        = 16,
+        BABY_BOWSER = 17,
         // New Spaces
-        LUCKY       = 0x12,
-        //HIDDEN      = 0x13
+        LUCKY       = 18,
+      //HIDDEN      = 19
     }
 
     ubyte[36] _data;
