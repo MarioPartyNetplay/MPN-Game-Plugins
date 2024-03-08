@@ -14,6 +14,7 @@ import std.stdio;
 import std.typecons;
 import std.math;
 import std.bitmanip;
+import std.regex;
 
 alias Address     = uint;
 alias Instruction = uint;
@@ -83,6 +84,10 @@ mixin template Field(Address A, T, string N) {
         ubyte[swapAddrEndian!T(A) & 0x7FFFFF] _pad;
         mixin("T " ~ N ~ ";");
     }
+}
+
+string lossyFloats(string json) {
+    return json.replaceAll!(m => m.hit.to!double.to!string)(regex(`-?[0-9]+\.[0-9]+`));
 }
 
 JSONValue toJSON(T)(const T scl) if (isScalarType!T && !is (T == enum)) { return JSONValue(scl); }
@@ -484,7 +489,7 @@ abstract class Game(ConfigType, StateType = NoState) : Plugin {
     }
 
     void saveConfig() {
-        std.file.write(romName ~ ".json", config.toJSON().toPrettyString());
+        std.file.write(romName ~ ".json", config.toJSON().toPrettyString().lossyFloats());
     }
 
     void loadState() {
@@ -499,7 +504,7 @@ abstract class Game(ConfigType, StateType = NoState) : Plugin {
 
     void saveState() {
         static if (!is(StateType == NoState)) {
-            std.file.write(romName ~ "-State.json", state.toJSON().toPrettyString());
+            std.file.write(romName ~ "-State.json", state.toJSON().toPrettyString().lossyFloats());
         }
     }
 
