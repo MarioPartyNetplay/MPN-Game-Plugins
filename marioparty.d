@@ -16,15 +16,16 @@ enum PanelColor : ubyte {
     GREEN = 4
 }
 
-enum Character : ubyte {
-    MARIO   = 0,
-    LUIGI   = 1,
-    PEACH   = 2,
-    YOSHI   = 3,
-    WARIO   = 4,
-    DK      = 5,
-    WALUIGI = 6,
-    DAISY   = 7
+enum Character : byte {
+    UNDEFINED = -1,
+    MARIO     =  0,
+    LUIGI     =  1,
+    PEACH     =  2,
+    YOSHI     =  3,
+    WARIO     =  4,
+    DK        =  5,
+    WALUIGI   =  6,
+    DAISY     =  7
 }
 
 string formatText(string text) pure {
@@ -134,6 +135,14 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
 
     override void onStart() {
         super.onStart();
+
+        players.each!((i, p) {
+            if (i >= config.characters.length) return;
+            if (config.characters[i] == Character.UNDEFINED) return;
+            p.data.character = config.characters[i];
+            p.data.character.onRead( (ref Character character) { character = config.characters[i]; });
+            p.data.character.onWrite((ref Character character) { character = config.characters[i]; });
+        });
 
         data.currentScene.onWrite((ref Scene scene) {
             if (scene == data.currentScene) return;

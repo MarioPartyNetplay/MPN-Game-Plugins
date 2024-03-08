@@ -13,6 +13,7 @@ import std.string;
 import std.traits;
 
 class Config {
+    Character[] characters = [Character.UNDEFINED, Character.UNDEFINED, Character.UNDEFINED, Character.UNDEFINED];
     bool alwaysDuel = false;
     bool lastPlaceDoubleRoll = false;
     bool teamMode = false;
