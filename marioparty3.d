@@ -23,7 +23,7 @@ class Config {
     bool preventRepeatMiniGames = false;
     bool randomChanceOrder = false;
     bool itemsOnFinalTurn = false;
-    int luckySpacePercentage = 0;
+    float luckySpaceRatio = 0.0;
     MiniGame[] blockedMiniGames;
     bool doubleCoinMiniGames = false;
     bool mpiqPermadeath = false;
@@ -34,6 +34,7 @@ class Config {
     bool revealHiddenBlocksOnFinalTurn = false;
     float mapScrollSpeedMultiplier = 1.0;
     bool increaseItemShopVariety = false;
+    float toadShopChance = -1.0;
 
     this() {
         bonuses = [
@@ -532,7 +533,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             });
         }
 
-        if (config.luckySpacePercentage > 0) {
+        if (config.luckySpaceRatio > 0) {
             Ptr!Address luckySpaceTexturePtr = 0;
             Ptr!Address goldSpaceTexturePtr = 0;
             ubyte[] bSpaces, lSpaces, hSpaces;
@@ -627,7 +628,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (gpr.s3 == Space.Type.BLUE && gpr.s2 == 0) { // Cache blue and lucky space lists
                     auto blueSpaces = iota(data.spaceCount).filter!(e => data.spaces[e].type == Space.Type.BLUE).array;
                     state.customSpaces.length = data.spaceCount;
-                    long newLuckyCount = roundTo!long(blueSpaces.length * min(0.01 * config.luckySpacePercentage, 1.0))
+                    long newLuckyCount = roundTo!long(blueSpaces.length * min(config.luckySpaceRatio, 1.0))
                                        - state.customSpaces.count!(e => e == CustomSpace.LUCKY);
                     auto newBlues = blueSpaces.filter!(e => state.customSpaces[e] == CustomSpace.NORMAL).array.randomShuffle(random);
                     if (!newBlues.empty) {
@@ -857,6 +858,19 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 }
 
                 gpr.v0 = rank;
+            });
+        }
+
+        if (config.toadShopChance >= 0) {
+            Address[][Scene] shopTypeAddress;
+            0x800ECEDC.onExec({ // return RNGPercentChance
+                if (!isBoardScene()) return;
+                if (data.currentScene !in shopTypeAddress) {
+                    shopTypeAddress[data.currentScene] = searchMemory([0x0C03B3A7, 0x24040042, 0x00021400, 0x2C420001]);
+                }
+                if (shopTypeAddress[data.currentScene].canFind(gpr.ra - 8)) {
+                    gpr.v0 = random.uniform01() < config.toadShopChance;
+                }
             });
         }
     }

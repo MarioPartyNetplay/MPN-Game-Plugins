@@ -630,10 +630,16 @@ void jal(Address addr, uint a0, uint a1, uint a2, uint a3, void delegate(uint) c
     });
 }
 
-Address searchMemory(T)(immutable T[] data) {
-    auto mem = (cast(T*)memory.ptr)[0..memory.length / T.sizeof];
-    auto index = mem.countUntil(data);
-    return index == -1 ? 0 : cast(Address)(0x80000000 + index * T.sizeof);
+Address[] searchMemory(immutable uint[] data) {
+    auto mem = (cast(uint*)memory.ptr)[0..memory.length / uint.sizeof];
+    ptrdiff_t[] result;
+    ptrdiff_t start = 0;
+    ptrdiff_t index;
+    while (start < mem.length && (index = mem[start..$].countUntil(data)) != -1) {
+        result ~= start + index;
+        start += index + 1;
+    }
+    return result.map!(e => cast(Address)(0x80000000 + e * uint.sizeof)).array;
 }
 
 void info(T...)(T args) {

@@ -22,8 +22,8 @@ class Config {
     int[Character] teams;
     bool randomBonus = false;
     string[BonusType] bonuses;
-    int itemSpacePercentage = 0;
-    int luckySpacePercentage = 0;
+    float itemSpaceRatio = 0;
+    float luckySpaceRatio = 0;
     //bool revealHiddenBlocksOnFinalTurn = false;
     int extraChanceSpaces = 0;
     float mapScrollSpeedMultiplier = 1.0;
@@ -265,7 +265,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
     override void onStart() {
         super.onStart();
 
-        if (config.luckySpacePercentage > 0) {
+        if (config.luckySpaceRatio > 0) {
             immutable ITEM_WEIGHTS_EARLY = [
                 Item.MUSHROOM:        22,
                 Item.SKELETON_KEY:     9,
@@ -368,13 +368,14 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                 gpr.ra.onExecOnce({ clearExecOnce(0x800662F0); });
 
                 if (data.currentScene !in itemShopRoutines) {
-                    itemShopRoutines[data.currentScene] = searchMemory([
+                    auto result = searchMemory([
                         0x27BDFF90, 0xAFBF0068, 0xAFB50064, 0xAFB40060,
                         0xAFB3005C, 0xAFB20058, 0xAFB10054, 0xAFB00050,
                         0x3C148010, 0x269493A8, 0x0C01770F, 0x2404FFFF,
                         0x0040A821, 0x3C038010, 0x846393C6, 0x24020004,
                         0x10620169, 0x2404FFFF, 0x2405FFFF, 0x0C01775A
                     ]);
+                    itemShopRoutines[data.currentScene] = (result.empty ? 0 : result.front);
                 }
                 Address routine = itemShopRoutines[data.currentScene];
                 if (!routine) return;
@@ -744,7 +745,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             });
         }
 
-        if (config.itemSpacePercentage > 0 || config.luckySpacePercentage > 0 || config.extraChanceSpaces > 0) {
+        if (config.itemSpaceRatio > 0 || config.luckySpaceRatio > 0 || config.extraChanceSpaces > 0) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene == Scene.START_BOARD) {
                     state.spaces = [];
@@ -767,7 +768,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                                   .each!(i => data.spaces[i].type = state.spaces[i] = Space.Type.CHANCE);
                     }
 
-                    long itemCount = roundTo!long(blueSpaces.length * min(0.01 * config.itemSpacePercentage, 1.0))
+                    long itemCount = roundTo!long(blueSpaces.length * min(config.itemSpaceRatio, 1.0))
                                    - blueSpaces.count!(i => state.spaces[i] == Space.Type.ITEM);
                     if (itemCount > 0) {
                         blueSpaces.filter!(i => state.spaces[i] == Space.Type.UNDEFINED)
@@ -775,7 +776,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                                   .each!(i => data.spaces[i].type = state.spaces[i] = Space.Type.ITEM);
                     }
 
-                    long luckyCount = roundTo!long(blueSpaces.length * min(0.01 * config.luckySpacePercentage, 1.0))
+                    long luckyCount = roundTo!long(blueSpaces.length * min(config.luckySpaceRatio, 1.0))
                                     - blueSpaces.count!(i => state.spaces[i] == Space.Type.LUCKY);
                     if (luckyCount > 0) {
                         blueSpaces.filter!(i => state.spaces[i] == Space.Type.UNDEFINED)
