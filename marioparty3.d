@@ -756,9 +756,10 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.finalResultsDoNotProceed) {
-            0x80109344.onExec({
+            0x80109348.onExec({
                 if (data.currentScene != Scene.FINAL_RESULTS) return;
-                gpr.v0 = 0;
+                gpr.v0 = input[0..$].map!(i => i.buttons << 8)
+                                    .canFind!(b => (b & BUTTON.A) && (b & BUTTON.Z));
             });
         }
 

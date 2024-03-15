@@ -693,7 +693,7 @@ __gshared {
     FPR* fpr;
     ubyte[] memory;
     ulong frame;
-    InputData[4] previous;
+    InputData[4] input;
     Plugin function(string, string) pluginFactory;
     void delegate(Address)[][Address] executeHandlers;
     void delegate(Address)[][Address] executeOnceHandlers;
@@ -763,7 +763,7 @@ extern (C) {
             fpr = info.fpr;
             memory = info.memory[0..info.memorySize];
             frame = 0;
-            previous.each!((ref b) { b.value = 0; });
+            input.each!((ref b) { b.value = 0; });
             executeHandlers.clear();
             executeOnceHandlers.clear();
             handlers!1.read.clear();
@@ -791,17 +791,17 @@ extern (C) {
         }
     }
 
-    export void Input(int port, InputData* input) {
-        if (*input && *input != previous[port]) {
+    export void Input(int port, InputData* data) {
+        if (*data && *data != input[port]) {
             // Use the frame, port, and input to flip a random bit in the state of the RNG
-            auto sm64 = SplitMix64((frame << 34) | (cast(ulong)port << 32) | *input);
+            auto sm64 = SplitMix64((frame << 34) | (cast(ulong)port << 32) | *data);
             auto pos = uniform(0, 256, sm64);
             random.state[pos / 64] ^= 1UL << (pos % 64);
         }
-        previous[port] = *input;
+        input[port] = *data;
 
         if (plugin) {
-            try { plugin.onInput(port, input); }
+            try { plugin.onInput(port, data); }
             catch (Exception e) { error(e); }
         }
     }
