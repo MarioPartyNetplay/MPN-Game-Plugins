@@ -666,6 +666,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             0x800FE258.onExec({ // Land on lucky space
                 if (!isBoardScene()) return;
                 if (state.customSpaces[data.currentSpaceIndex] != CustomSpace.LUCKY) return;
+                if (data.spaces[data.currentPlayerIndex].type != Space.Type.BLUE) return;
 
                 if (uniform!"[]"(1, 3, random) == 1) {
                     gpr.v0 = Space.Type.ITEM; // 1 in 3 chance of item event on lucky space 
@@ -677,6 +678,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             data.blueOrRedSpaceCoins.addr.onExec({ // Give extra coins on lucky space
                 if (!isBoardScene()) return;
                 if (state.customSpaces[data.currentSpaceIndex] != CustomSpace.LUCKY) return;
+                if (data.spaces[data.currentPlayerIndex].type != Space.Type.BLUE) return;
 
                 switch (gpr.s0) {
                     case 3: gpr.s0 = [7, 10, 12, 15, 20].choice(random); break;
@@ -687,6 +689,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             0x800FE478.onExec({ // Force Toad or Baby Bowser on lucky space
                 if (!isBoardScene()) return;
                 if (state.customSpaces[data.currentSpaceIndex] != CustomSpace.LUCKY) return;
+                if (data.spaces[data.currentPlayerIndex].type != Space.Type.BLUE) return;
                 
                 gpr.v0 = uniform!"[]"(0, 1, random);
             });
