@@ -649,12 +649,16 @@ Address[] searchMemory(immutable uint[] data) {
 
 void info(T...)(T args) {
     msg(MSG_LEVEL.INFO, args);
-    stdout.writeln(args);
+    version (Windows) { } else {
+        stdout.writeln(args);
+    }
 }
 
 void error(T...)(T args) {
     msg(MSG_LEVEL.ERROR, args);
-    stderr.writeln(args);
+    version (Windows) { } else {
+        stderr.writeln(args);
+    }
 }
 
 void msg(T...)(MSG_LEVEL level, T args) {

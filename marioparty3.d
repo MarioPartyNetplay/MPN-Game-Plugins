@@ -346,7 +346,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         bool[uint] seen;
         0x800843F0.onExec({
             if (gpr.a0 !in seen) {
-                writeln((cast(uint)gpr.a0).to!string(16), " ", (cast(uint)gpr.a1).to!string(16), " ", (cast(uint)gpr.a2).to!string(16), " ", (cast(uint)gpr.a3).to!string(16));
+                info((cast(uint)gpr.a0).to!string(16), " ", (cast(uint)gpr.a1).to!string(16), " ", (cast(uint)gpr.a2).to!string(16), " ", (cast(uint)gpr.a3).to!string(16));
                 seen[gpr.a0] = true;
             }
 

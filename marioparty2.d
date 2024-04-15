@@ -491,7 +491,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
             players.each!((p) {
                 p.data.item.onWrite((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
-                    //writeln(pc.to!string(16), ": P", p.index, " Write");
+                    //info(pc.to!string(16), ": P", p.index, " Write");
 
                     if (data.itemMenuOpen) {
                         if (item == Item.NONE) {
@@ -514,7 +514,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
 
                 p.data.item.onRead((ref Item item, Address pc) {
                     if (!isBoardScene()) return;
-                    //if (pc != 0x8005EEA8) writeln(pc.to!string(16), ": P", p.index, " Read");
+                    //if (pc != 0x8005EEA8) info(pc.to!string(16), ": P", p.index, " Read");
                     if (item != Item.NONE) return;
                     if (p.state.items.empty) return;
 
