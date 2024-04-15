@@ -694,7 +694,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 gpr.v0 = uniform!"[]"(0, 1, random);
             });
             data.currentScene.onWrite((ref Scene scene) {
-                if (scene != Scene.FINISH_BOARD) return;
+                if (scene != Scene.FINAL_RESULTS) return;
                 info("Lucky Spaces:");
                 players.dup.sort!((p, q) => p.data.coins > q.data.coins, SwapStrategy.stable)
                            .sort!((p, q) => p.data.stars > q.data.stars, SwapStrategy.stable)
