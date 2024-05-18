@@ -97,7 +97,9 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
     override void loadConfig() {
         super.loadConfig();
 
-        teams.each!((c, ref t) => t = config.teams.require(cast(Character)c, t));
+        static if (is(typeof(config.teamMode))) {
+            teams.each!((c, ref t) => t = config.teams.require(cast(Character)c, t));
+        }
     }
 
     override void loadState() {
@@ -156,118 +158,120 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
             });
         }
 
-        if (config.teamMode) {
-            players.each!((p) {
-                p.data.coins.onWrite((ref ushort coins) {
-                    if (!isScoreScene()) return;
-                    if (lockTeams()) {
-                        coins = p.data.coins;
-                    } if (!disableTeams()) {
-                        teammates(p).each!((t) {
-                            t.data.coins = coins;
-                            t.data.maxCoins = max(t.data.maxCoins, coins);
-                        });
-                    }
-                });
-                p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
-                    if (!isScoreScene()) return;
-                    if (lockTeams()) {
-                        stars = p.data.stars;
-                    } if (!disableTeams()) {
-                        teammates(p).each!((t) {
-                            t.data.stars = stars;
-                        });
-                    }
-                });
-                /*
-                p.data.color.onWrite((ref PanelColor color) {
-                    if (!isBoardScene()) return;
-                    if (color == PanelColor.CLEAR) return;
-                    auto t = teammates(p).find!(t => t.index < p.index);
-                    if (!t.empty) {
-                        color = t.front.data.color;
-                    }
-                });
-                */
-                p.data.flags.onWrite((ref ubyte flags) {
-                    if (!isBoardScene()) return;
-                    if (p.data.flags == flags) return;
-                    p.data.flags = flags;
-                });
-                p.data.controller.onWrite((ref ubyte controller) {
-                    if (!isBoardScene()) return;
-                    if (p.data.controller == controller) return;
-                    p.data.controller = controller;
-                });
-            });
-
-            /*
-            static if (is(typeof(data.playerPanels)) && is(typeof(data.drawPlayerColor))) {
-                data.drawPlayerColor.addr.onExec({
-                    if (!isBoardScene()) return;
-                    if (gpr.a1 == PanelColor.CLEAR) return;
-                    auto p = players[gpr.a0];
-                    auto t = teammates(p).find!(t => t.index < p.index);
-                    if (!t.empty) {
-                        gpr.a1 = data.playerPanels[t.front.index].color;
-                    }
-                });
-            }
-            */
-
-            static if (is(typeof(data.playerPanels)) && is(typeof(data.determineTeams))) {
-                data.determineTeams.addr.onExec({
-                    if (!isBoardScene()) return;
-
-                    auto allTeamsSplit = players.all!(p => teammates(p).any!(t =>
-                      data.playerPanels[t.index].color != data.playerPanels[p.index].color));
-                      
-                    if (!allTeamsSplit) return;
-                    
-                    players.each!((i, p) {
-                        data.playerPanels[i].color = (team(p) == team(players[0]) ? PanelColor.BLUE : PanelColor.RED);
+        static if (is(typeof(config.teamMode))) {
+            if (config.teamMode) {
+                players.each!((p) {
+                    p.data.coins.onWrite((ref ushort coins) {
+                        if (!isScoreScene()) return;
+                        if (lockTeams()) {
+                            coins = p.data.coins;
+                        } if (!disableTeams()) {
+                            teammates(p).each!((t) {
+                                t.data.coins = coins;
+                                t.data.maxCoins = max(t.data.maxCoins, coins);
+                            });
+                        }
+                    });
+                    p.data.stars.onWrite((ref typeof(p.data.stars) stars) {
+                        if (!isScoreScene()) return;
+                        if (lockTeams()) {
+                            stars = p.data.stars;
+                        } if (!disableTeams()) {
+                            teammates(p).each!((t) {
+                                t.data.stars = stars;
+                            });
+                        }
+                    });
+                    /*
+                    p.data.color.onWrite((ref PanelColor color) {
+                        if (!isBoardScene()) return;
+                        if (color == PanelColor.CLEAR) return;
+                        auto t = teammates(p).find!(t => t.index < p.index);
+                        if (!t.empty) {
+                            color = t.front.data.color;
+                        }
+                    });
+                    */
+                    p.data.flags.onWrite((ref ubyte flags) {
+                        if (!isBoardScene()) return;
+                        if (p.data.flags == flags) return;
+                        p.data.flags = flags;
+                    });
+                    p.data.controller.onWrite((ref ubyte controller) {
+                        if (!isBoardScene()) return;
+                        if (p.data.controller == controller) return;
+                        p.data.controller = controller;
                     });
                 });
-            }
 
-            data.currentPlayerIndex.onWrite((ref typeof(data.currentPlayerIndex) index) {
-                if (!isBoardScene()) return;
-                data.currentPlayerIndex = index;
-                teammates(currentPlayer).each!((t) {
-                    t.data.coins = currentPlayer.data.coins;
-                    t.data.stars = currentPlayer.data.stars;
-                });
-            });
+                /*
+                static if (is(typeof(data.playerPanels)) && is(typeof(data.drawPlayerColor))) {
+                    data.drawPlayerColor.addr.onExec({
+                        if (!isBoardScene()) return;
+                        if (gpr.a1 == PanelColor.CLEAR) return;
+                        auto p = players[gpr.a0];
+                        auto t = teammates(p).find!(t => t.index < p.index);
+                        if (!t.empty) {
+                            gpr.a1 = data.playerPanels[t.front.index].color;
+                        }
+                    });
+                }
+                */
 
-            static if (is(typeof(data.booRoutinePtr))) {
-                Ptr!Instruction previousRoutinePtr = 0;
-                auto booRoutinePtrHandler = delegate void(ref Ptr!Instruction routinePtr) {
-                    if (!routinePtr || routinePtr == previousRoutinePtr || !isBoardScene()) return;
-                    if (previousRoutinePtr) {
-                        executeHandlers.remove(previousRoutinePtr);
-                    }
-                    routinePtr.onExec({
-                        teammates(currentPlayer).each!((t) {
-                            t.data.coins = 0;
-                            t.data.stars = 0;
+                static if (is(typeof(data.playerPanels)) && is(typeof(data.determineTeams))) {
+                    data.determineTeams.addr.onExec({
+                        if (!isBoardScene()) return;
+
+                        auto allTeamsSplit = players.all!(p => teammates(p).any!(t =>
+                        data.playerPanels[t.index].color != data.playerPanels[p.index].color));
+                        
+                        if (!allTeamsSplit) return;
+                        
+                        players.each!((i, p) {
+                            data.playerPanels[i].color = (team(p) == team(players[0]) ? PanelColor.BLUE : PanelColor.RED);
                         });
-                        gpr.ra.onExecOnce({
+                    });
+                }
+
+                data.currentPlayerIndex.onWrite((ref typeof(data.currentPlayerIndex) index) {
+                    if (!isBoardScene()) return;
+                    data.currentPlayerIndex = index;
+                    teammates(currentPlayer).each!((t) {
+                        t.data.coins = currentPlayer.data.coins;
+                        t.data.stars = currentPlayer.data.stars;
+                    });
+                });
+
+                static if (is(typeof(data.booRoutinePtr))) {
+                    Ptr!Instruction previousRoutinePtr = 0;
+                    auto booRoutinePtrHandler = delegate void(ref Ptr!Instruction routinePtr) {
+                        if (!routinePtr || routinePtr == previousRoutinePtr || !isBoardScene()) return;
+                        if (previousRoutinePtr) {
+                            executeHandlers.remove(previousRoutinePtr);
+                        }
+                        routinePtr.onExec({
                             teammates(currentPlayer).each!((t) {
-                                t.data.coins = currentPlayer.data.coins;
-                                t.data.stars = currentPlayer.data.stars;
+                                t.data.coins = 0;
+                                t.data.stars = 0;
+                            });
+                            gpr.ra.onExecOnce({
+                                teammates(currentPlayer).each!((t) {
+                                    t.data.coins = currentPlayer.data.coins;
+                                    t.data.stars = currentPlayer.data.stars;
+                                });
                             });
                         });
+                        previousRoutinePtr = routinePtr;
+                    };
+                    data.booRoutinePtr.onWrite(booRoutinePtrHandler);
+                    data.currentScene.onWrite((ref Scene scene) {
+                        if (!isBoardScene(scene) && previousRoutinePtr) {
+                            executeHandlers.remove(previousRoutinePtr);
+                            previousRoutinePtr = 0;
+                        }
                     });
-                    previousRoutinePtr = routinePtr;
-                };
-                data.booRoutinePtr.onWrite(booRoutinePtrHandler);
-                data.currentScene.onWrite((ref Scene scene) {
-                    if (!isBoardScene(scene) && previousRoutinePtr) {
-                        executeHandlers.remove(previousRoutinePtr);
-                        previousRoutinePtr = 0;
-                    }
-                });
-                booRoutinePtrHandler(data.booRoutinePtr);
+                    booRoutinePtrHandler(data.booRoutinePtr);
+                }
             }
         }
 
