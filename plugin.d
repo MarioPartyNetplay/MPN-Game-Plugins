@@ -482,20 +482,20 @@ abstract class Game(ConfigType, StateType = NoState) : Plugin {
 
     void loadConfig() {
         try {
-            config = readText(romName ~ ".json").parseJSON().fromJSON!ConfigType();
+            config = readText("Config/" ~ romName ~ ".json").parseJSON().fromJSON!ConfigType();
         } catch (FileException e) {
             config = new ConfigType;
         }
     }
 
     void saveConfig() {
-        std.file.write(romName ~ ".json", config.toJSON().toPrettyString().lossyFloats());
+        std.file.write("Config/" ~ romName ~ ".json", config.toJSON().toPrettyString().lossyFloats());
     }
 
     void loadState() {
         static if (!is(StateType == NoState)) {
             try {
-                state = readText(romName ~ "-State.json").parseJSON().fromJSON!StateType();
+                state = readText("Config/" ~ romName ~ "-State.json").parseJSON().fromJSON!StateType();
             } catch (FileException e) {
                 state = new StateType;
             }
@@ -504,7 +504,7 @@ abstract class Game(ConfigType, StateType = NoState) : Plugin {
 
     void saveState() {
         static if (!is(StateType == NoState)) {
-            std.file.write(romName ~ "-State.json", state.toJSON().toPrettyString().lossyFloats());
+            std.file.write("Config/" ~ romName ~ "-State.json", state.toJSON().toPrettyString().lossyFloats());
         }
     }
 
