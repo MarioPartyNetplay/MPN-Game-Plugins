@@ -49,7 +49,8 @@ class Config {
             BonusType.BATTLE:    "Battle",
             BonusType.ITEM:      "Item",
             BonusType.BANK:      "Banking",
-            BonusType.GAME_GUY:  "Gambling"
+            BonusType.GAME_GUY:  "Gambling",
+            BonusType.LUCKY:     "Lucky"
         ];
     }
 }
@@ -140,22 +141,6 @@ union Player {
     mixin Field!(0x32, ubyte, "itemSpaces");
     mixin Field!(0x33, ubyte, "bankSpaces");
     mixin Field!(0x34, ubyte, "gameGuySpaces");
-
-    uint getBonusStat(BonusType type) {
-        final switch (type) {
-            case BonusType.MINI_GAME: return miniGameCoins;
-            case BonusType.COIN:      return maxCoins;
-            case BonusType.HAPPENING: return happeningSpaces;
-            case BonusType.RED:       return redSpaces;
-            case BonusType.BLUE:      return blueSpaces;
-            case BonusType.CHANCE:    return chanceSpaces;
-            case BonusType.BOWSER:    return bowserSpaces;
-            case BonusType.BATTLE:    return battleSpaces;
-            case BonusType.ITEM:      return itemSpaces;
-            case BonusType.BANK:      return bankSpaces;
-            case BonusType.GAME_GUY:  return gameGuySpaces;
-        }
-    }
 }
 
 union Space {
@@ -204,7 +189,8 @@ immutable BONUS_TEXT_REPLACEMENT = [
     ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Battle Spaces<NORMAL><RESET>"],
     ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Item Spaces<NORMAL><RESET>"],
     ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Bank Spaces<NORMAL><RESET>"],
-    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Game Guy Spaces<NORMAL><RESET>"]
+    ["<GREEN><BOLD>$NAME Star<NORMAL><RESET>",  "<GREEN><BOLD>$NAME Stars<NORMAL><RESET>",  "landed on the most\n<GREEN><BOLD>Game Guy Spaces<NORMAL><RESET>"],
+    ["<BLUE><BOLD>$NAME Star<NORMAL><RESET>",   "<BLUE><BOLD>$NAME Stars<NORMAL><RESET>",   "landed on the most\n<BLUE><BOLD>Lucky Spaces<NORMAL><RESET>"]
 ].map!(e => e.map!(formatText).array).array;
 
 void mallocPerm(size_t size, void delegate(uint ptr) callback) {
@@ -274,6 +260,9 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         super.loadConfig();
 
         bonus = config.bonuses.keys;
+        if (config.luckySpaceRatio <= 0.0) {
+            bonus = bonus.remove!(b => b == BonusType.LUCKY);
+        }
     }
 
     override bool lockTeams() const {
@@ -336,6 +325,23 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             return GamePhase.MID;
         } else {
             return GamePhase.END;
+        }
+    }
+
+    static uint getBonusStat(Player player, BonusType type) {
+        final switch (type) {
+            case BonusType.MINI_GAME: return player.data.miniGameCoins;
+            case BonusType.COIN:      return player.data.maxCoins;
+            case BonusType.HAPPENING: return player.data.happeningSpaces;
+            case BonusType.RED:       return player.data.redSpaces;
+            case BonusType.BLUE:      return player.data.blueSpaces;
+            case BonusType.CHANCE:    return player.data.chanceSpaces;
+            case BonusType.BOWSER:    return player.data.bowserSpaces;
+            case BonusType.BATTLE:    return player.data.battleSpaces;
+            case BonusType.ITEM:      return player.data.itemSpaces;
+            case BonusType.BANK:      return player.data.bankSpaces;
+            case BonusType.GAME_GUY:  return player.data.gameGuySpaces;
+            case BonusType.LUCKY:     return player.state.luckySpaceCount;
         }
     }
 
@@ -435,27 +441,27 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             });
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
+                gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.MINI_GAME]);
             });
             data.loadBonusStat1b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.MINI_GAME]);
+                gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.MINI_GAME]);
             });
             data.loadBonusStat2a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.COIN]);
+                gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.COIN]);
             });
             data.loadBonusStat2b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.COIN]);
+                gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.COIN]);
             });
             data.loadBonusStat3a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v1 = data.players[gpr.s2].getBonusStat(bonus[BonusType.HAPPENING]);
+                gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.HAPPENING]);
             });
             data.loadBonusStat3b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
-                gpr.v0 = data.players[gpr.s2].getBonusStat(bonus[BonusType.HAPPENING]);
+                gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.HAPPENING]);
             });
         }
 
@@ -663,6 +669,16 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     gpr.a0 = (gpr.s2 < hSpaces.length ? hSpaces[gpr.s2] : 0xFF);
                 }
             });
+            0x800FD774.onExec({ // Increment lucky space count
+                if (!isBoardScene()) return;
+                if (state.customSpaces[data.currentSpaceIndex] != CustomSpace.LUCKY) return;
+                if (data.spaces[data.currentSpaceIndex].type != Space.Type.BLUE) return;
+
+                gpr.v0--;
+                currentPlayer.state.luckySpaceCount++;
+
+                saveState();
+            });
             0x800FE258.onExec({ // Land on lucky space
                 if (!isBoardScene()) return;
                 if (state.customSpaces[data.currentSpaceIndex] != CustomSpace.LUCKY) return;
@@ -671,9 +687,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (uniform!"[]"(1, 3, random) == 1) {
                     gpr.v0 = Space.Type.ITEM; // 1 in 3 chance of item event on lucky space 
                 }
-
-                currentPlayer.state.luckySpaceCount++;
-                saveState();
             });
             data.blueOrRedSpaceCoins.addr.onExec({ // Give extra coins on lucky space
                 if (!isBoardScene()) return;
@@ -1119,7 +1132,8 @@ enum BonusType {
     BATTLE,
     ITEM,
     BANK,
-    GAME_GUY
+    GAME_GUY,
+    LUCKY
 }
 
 enum BowserEventType : int {
