@@ -55,6 +55,18 @@ string formatText(string text) pure {
                .replace("<END>",    "\xFF");
 }
 
+string unformatText(string text) pure {
+    return text.replace("\x3D", "-")
+               .replace("\x3E", "×")
+               .replace("\x5C", "'")
+               .replace("\x5F", "/")
+               .replace("\x7B", ":")
+               .replace("\x82", ",")
+               .replace("\x85", ".")
+               .replace("\xC2", "!")
+               .replace("\xC3", "?");
+}
+
 class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateType) {
     alias typeof(MemoryType.currentScene) Scene;
     alias typeof(MemoryType.players.front) PlayerData;

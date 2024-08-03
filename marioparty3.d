@@ -69,6 +69,7 @@ class State {
     ShuffleQueue!MiniGame[MiniGameType] miniGameQueue;
     CustomSpace[] customSpaces;
     ubyte[] usedBattleSpaces;
+    string[] boardNames;
 }
 
 union Memory {
@@ -80,6 +81,7 @@ union Memory {
     mixin Field!(0x8004ACE0, Instruction, "playSFX");
     mixin Field!(0x80097650, uint, "randomState");
     mixin Field!(0x800CC4E4, ushort, "itemHiddenBlock");
+    mixin Field!(0x800CD059, ubyte, "currentBoard");
     mixin Field!(0x800CD05A, ubyte, "totalTurns");
     mixin Field!(0x800CD05B, ubyte, "currentTurn");
     mixin Field!(0x800CD067, ubyte, "currentPlayerIndex");
@@ -294,6 +296,12 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             case Scene.WOODY_WOODS_BOARD:
             case Scene.CREEPY_CAVERN_BOARD:
             case Scene.WALUIGIS_ISLAND_BOARD:
+            case Scene.GATE_GUY_BOARD:
+            case Scene.ARROWHEAD_BOARD:
+            case Scene.PIPESQUEAK_BOARD:
+            case Scene.BLOWHARD_BOARD:
+            case Scene.MR_MOVER_BOARD:
+            case Scene.BACKTRACK_BOARD:
                 return true;
             default:
                 return false;
@@ -325,6 +333,21 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             return GamePhase.MID;
         } else {
             return GamePhase.END;
+        }
+    }
+
+    string getCurrentBoardName() {
+        if (!isBoardScene()) return null;
+        int index;
+        if (data.currentScene <= Scene.WALUIGIS_ISLAND_BOARD) {
+            index = data.currentScene - Scene.CHILLY_WATERS_BOARD;
+        } else {
+            index = data.currentScene - Scene.GATE_GUY_BOARD + 6;
+        }
+        if (index < state.boardNames.length) {
+            return state.boardNames[index];
+        } else {
+            return "N/A";
         }
     }
 
@@ -361,6 +384,27 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             gpr.a0 = gpr.a1 = 0x80240340;
         });
         */
+
+        data.currentScene.onWrite((ref Scene scene) {
+            if (scene != Scene.CASTLE_GROUNDS) return;
+            state.boardNames.length = 0;
+            saveState();
+        });
+
+        0x800364A0.onExec({
+            if (data.currentScene != Scene.CASTLE_GROUNDS) return;
+            if (!state.boardNames.empty) return;
+            auto result = searchMemory([0x0A4E6F74, 0x20626164, 0x20617420, 0x616C6C85, 0x19FF0000]); // "Not bad at all";
+            if (result.empty) return;
+            auto c = Ptr!char(result.front + 20);
+            for (auto i = 0; i < 12; i++) {
+                string boardName;
+                while (*c <= 0x1F) c++;
+                while (*c >= 0x20) boardName ~= *(c++);
+                state.boardNames ~= unformatText(boardName);
+            }
+            saveState();
+        });
 
         data.textLength.addr.onExec({
             auto c = Ptr!char(gpr.s0 + 2);
@@ -546,21 +590,14 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             ubyte[] bSpaces, lSpaces, hSpaces;
 
             bool lumasPlaygroundHiddenIndex(ushort index) {
-                if (index == 98 || index == 103 || index == 107) {
-                    if (index >= data.spaceCount) return false;
-                    if (data.spaces[98].type == data.spaces[103].type && data.spaces[103].type == data.spaces[107].type) {
-                        if (data.spaces[index].type == Space.Type.START || data.spaces[index].type == Space.Type.HAPPENING) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
+                if (getCurrentBoardName() != "Luma's Playground") return false;
+                
+                return index == 0xFFFF || index == 98 || index == 103 || index == 107;
             }
 
             bool validHiddenIndex(string exclude = null)(ushort index) {
-                if (index == 0xFFFF) return true;
-                if (index >= data.spaceCount) return false;
                 if (lumasPlaygroundHiddenIndex(index)) return true;
+                if (index >= data.spaceCount) return false;
                 if (data.spaces[index].type != Space.Type.BLUE) return false;
                 if (index < state.customSpaces.length && state.customSpaces[index] == CustomSpace.LUCKY) return false;
                 static if (exclude != "item") {
@@ -576,7 +613,9 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             }
 
             ushort randomHiddenIndex() {
-                auto selection = iota(data.spaceCount).filter!(i => validHiddenIndex(i)).array;
+                auto selection = iota(data.spaceCount).filter!(i => validHiddenIndex(i))
+                                                      .filter!(i => !lumasPlaygroundHiddenIndex(i))
+                                                      .array;
                 return selection.empty ? cast(ushort)0xFFFF : selection.choice(random);
             }
             
@@ -718,7 +757,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             if (config.revealHiddenBlocksOnFinalTurn) {
                 auto chooseHiddenBlockLocation = (ref ushort index) {
                     if (!isBoardScene()) return;
-                    if (index == 0xFFFF) return;
                     if (lumasPlaygroundHiddenIndex(index)) return;
                     index = randomHiddenIndex();
                 };
@@ -1021,6 +1059,12 @@ enum Scene : uint {
     START_BOARD              =  83,
     FINAL_RESULTS            =  85,
     OPENING_CREDITS          =  88,
+    GATE_GUY_BOARD           =  91,
+    ARROWHEAD_BOARD          =  92,
+    PIPESQUEAK_BOARD         =  93,
+    BLOWHARD_BOARD           =  94,
+    MR_MOVER_BOARD           =  95,
+    BACKTRACK_BOARD          =  96,
     MINI_GAME_ROOM_RETRY     = 104,
     MINI_GAME_ROOM           = 105,
     CHANCE_TIME              = 106,
