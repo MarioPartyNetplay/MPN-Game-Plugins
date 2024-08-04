@@ -258,15 +258,6 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         super(name, hash);
     }
 
-    override void loadConfig() {
-        super.loadConfig();
-
-        bonus = config.bonuses.keys;
-        if (config.luckySpaceRatio <= 0.0) {
-            bonus = bonus.remove!(b => b == BonusType.LUCKY);
-        }
-    }
-
     override bool lockTeams() const {
         if (data.currentScene == Scene.CHANCE_TIME) {
             if (data.chancePlayer1 < players.length && data.chancePlayer2 < players.length) {
@@ -417,7 +408,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 gameText = formatText("<YELLOW>" ~ data.currentTurn.to!string ~ " / " ~ data.totalTurns.to!string ~ "<RESET><NUL><NUL>");
             }
 
-            if (config.randomBonus && data.currentScene == Scene.FINISH_BOARD) {
+            if (config.randomBonus && data.currentScene == Scene.FINISH_BOARD && bonus.length >= 3) {
                 gameText = gameText.replace("one\nstar", "one star")
                                    .replace(formatText("<BLUE><BOLD> Mini-Game Star<NORMAL><RESET>"), formatText(" <BLUE><BOLD>Mini-Game Star<NORMAL><RESET>"))
                                    .replace(formatText("<BLUE><BOLD>Mini-Game Star<NORMAL> <RESET>"), formatText("<BLUE><BOLD>Mini-Game Star<NORMAL><RESET> "));
@@ -480,31 +471,43 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         if (config.randomBonus) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINISH_BOARD) return;
-                bonus.partialShuffle(3, random);
-                info("Bonus Stars: ", bonus[0..3]);
+                bonus = config.bonuses.keys.filter!(b => players.any!(p => getBonusStat(p, b) > 0)).array;
+                if (bonus.length < 3) {
+                    bonus = config.bonuses.keys;
+                }
+                if (bonus.length >= 3) {
+                    bonus.partialShuffle(3, random);
+                    info("Bonus Stars: ", bonus[0..3]);
+                }
             });
             data.loadBonusStat1a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.MINI_GAME]);
             });
             data.loadBonusStat1b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.MINI_GAME]);
             });
             data.loadBonusStat2a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.COIN]);
             });
             data.loadBonusStat2b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.COIN]);
             });
             data.loadBonusStat3a.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s2], bonus[BonusType.HAPPENING]);
             });
             data.loadBonusStat3b.addr.onExec({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s2], bonus[BonusType.HAPPENING]);
             });
         }

@@ -184,15 +184,6 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
         super(name, hash);
     }
 
-    override void loadConfig() {
-        super.loadConfig();
-
-        bonus = config.bonuses.keys;
-        if (config.luckySpaceRatio <= 0.0) {
-            bonus = bonus.remove!(b => b == BonusType.LUCKY);
-        }
-    }
-
     override bool lockTeams() const {
         return false;
     }
@@ -686,37 +677,49 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
         if (config.randomBonus) {
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINISH_BOARD) return;
-                bonus.partialShuffle(3, random);
-                info("Bonus Stars: ", bonus[0..3]);
+                bonus = config.bonuses.keys.filter!(b => players.any!(p => getBonusStat(p, b) > 0)).array;
+                if (bonus.length < 3) {
+                    bonus = config.bonuses.keys;
+                }
+                if (bonus.length >= 3) {
+                    bonus.partialShuffle(3, random);
+                    info("Bonus Stars: ", bonus[0..3]);
+                }
             });
 
             0x80103F04.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s1], bonus[BonusType.MINI_GAME]);
             });
 
             0x80103F50.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s1], bonus[BonusType.MINI_GAME]);
             });
 
             0x80104314.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s1], bonus[BonusType.COIN]);
             });
 
             0x80104360.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s1], bonus[BonusType.COIN]);
             });
 
             0x80104724.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v1 = getBonusStat(players[gpr.s1], bonus[BonusType.HAPPENING]);
             });
 
             0x80104770.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
                 gpr.v0 = getBonusStat(players[gpr.s1], bonus[BonusType.HAPPENING]);
             });
 
@@ -730,6 +733,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
 
             0x800890CC.onExecDone({
                 if (data.currentScene != Scene.FINISH_BOARD) return;
+                if (bonus.length < 3) return;
 
                 switch (gpr.a1) {
                     case 0x5F8: setText("First, the <" ~ getColor(bonus[BonusType.MINI_GAME]) ~ ">" ~ config.bonuses[bonus[BonusType.MINI_GAME]] ~ " Star<RESET>\naward! This award goes to\nthe player who " ~ getDescription(bonus[BonusType.MINI_GAME])  ~ "."); break;
