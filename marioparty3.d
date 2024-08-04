@@ -32,7 +32,7 @@ class Config {
     bool improveLastFiveTurnsBonus = false;
     bool singleUseBattleSpaces = false;
     bool unlockEverything = false;
-    bool revealHiddenBlocksOnFinalTurn = false;
+    int revealHiddenBlocksOnRemainingTurns = 0;
     float mapScrollSpeedMultiplier = 1.0;
     bool increaseItemShopVariety = false;
     float toadShopChance = -1.0;
@@ -631,7 +631,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     LUCKY_SPACE_TEXTURE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
                     luckySpaceTexturePtr = ptr;
 
-                    if (config.revealHiddenBlocksOnFinalTurn) {
+                    if (config.revealHiddenBlocksOnRemainingTurns > 0) {
                         mallocTemp(GOLD_SPACE_TEXTURE.length + 0x10, (ptr) {
                             GOLD_SPACE_TEXTURE.each!((i, b) { Ptr!ubyte(ptr + 0x10)[i] = b; });
                             goldSpaceTexturePtr = ptr;
@@ -649,7 +649,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if (!isBoardScene()) return;
                 ptr = luckySpaceTexturePtr;
             });
-            if (config.revealHiddenBlocksOnFinalTurn) {
+            if (config.revealHiddenBlocksOnRemainingTurns > 0) {
                 data.spaceTypeTexturePointers[Space.Type.UNKNOWN_2].onRead((ref Address ptr, Address pc) {
                     if (!isBoardScene()) return;
                     if (pc.val!Instruction != 0x8C420000) {
@@ -688,7 +688,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     lSpaces.length = 0;
                     hSpaces.length = 0;
                     foreach (i; blueSpaces) {
-                        if (config.revealHiddenBlocksOnFinalTurn && data.currentTurn == data.totalTurns &&
+                        if (data.currentTurn + config.revealHiddenBlocksOnRemainingTurns > data.totalTurns &&
                            (i == data.itemHiddenBlock || i == data.coinHiddenBlock || i == data.starHiddenBlock)) {
                             hSpaces ~= cast(ubyte)i;
                         } else if (state.customSpaces[i] == CustomSpace.LUCKY) {
@@ -697,7 +697,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                             bSpaces ~= cast(ubyte)i;
                         }
                     }
-                    if (config.revealHiddenBlocksOnFinalTurn) {
+                    if (config.revealHiddenBlocksOnRemainingTurns > 0) {
                         if (!validHiddenIndex!"item"(data.itemHiddenBlock)) data.itemHiddenBlock = randomHiddenIndex();
                         if (!validHiddenIndex!"coin"(data.coinHiddenBlock)) data.coinHiddenBlock = randomHiddenIndex();
                         if (!validHiddenIndex!"star"(data.starHiddenBlock)) data.starHiddenBlock = randomHiddenIndex();
@@ -707,7 +707,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     gpr.a0 = (gpr.s2 < bSpaces.length ? bSpaces[gpr.s2] : 0xFF);
                 } else if (gpr.s3 == Space.Type.UNKNOWN_1) {
                     gpr.a0 = (gpr.s2 < lSpaces.length ? lSpaces[gpr.s2] : 0xFF);
-                } else if (gpr.s3 == Space.Type.UNKNOWN_2 && config.revealHiddenBlocksOnFinalTurn) {
+                } else if (gpr.s3 == Space.Type.UNKNOWN_2 && config.revealHiddenBlocksOnRemainingTurns > 0) {
                     gpr.a0 = (gpr.s2 < hSpaces.length ? hSpaces[gpr.s2] : 0xFF);
                 }
             });
@@ -757,7 +757,7 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                     info(format("    %-8s %2d", p.data.character.to!string ~ ":", p.state.luckySpaceCount));
                 });
             });
-            if (config.revealHiddenBlocksOnFinalTurn) {
+            if (config.revealHiddenBlocksOnRemainingTurns > 0) {
                 auto chooseHiddenBlockLocation = (ref ushort index) {
                     if (!isBoardScene()) return;
                     if (lumasPlaygroundHiddenIndex(index)) return;
