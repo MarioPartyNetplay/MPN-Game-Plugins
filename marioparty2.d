@@ -825,11 +825,13 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
 
             data.currentScene.onWrite((ref Scene scene) {
                 if (scene != Scene.FINAL_RESULTS) return;
-                info("Lucky Spaces:");
-                players.dup.sort!((p, q) => p.data.coins > q.data.coins, SwapStrategy.stable)
-                           .sort!((p, q) => p.data.stars > q.data.stars, SwapStrategy.stable)
-                           .each!((p) {
-                    info(format("    %-8s %2d", p.data.character.to!string ~ ":", p.state.luckySpaceCount));
+                0x801071EC.onExecOnce({
+                    info("Lucky Spaces:");
+                    players.dup.sort!((p, q) => p.data.coins > q.data.coins, SwapStrategy.stable)
+                               .sort!((p, q) => p.data.stars > q.data.stars, SwapStrategy.stable)
+                               .each!((p) {
+                        info(format("    %-8s %2d", p.data.character.to!string ~ ":", p.state.luckySpaceCount));
+                    });
                 });
             });
         }
