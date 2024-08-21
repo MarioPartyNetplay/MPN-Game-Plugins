@@ -36,6 +36,7 @@ class Config {
     float mapScrollSpeedMultiplier = 1.0;
     bool increaseItemShopVariety = false;
     float toadShopChance = -1.0;
+    bool replaceWackyWatch = false;
 
     this() {
         bonuses = [
@@ -929,6 +930,18 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 }
                 if (shopTypeAddress[data.currentScene].canFind(gpr.ra - 8)) {
                     gpr.v0 = random.uniform01() < config.toadShopChance;
+                }
+            });
+        }
+
+        if (config.replaceWackyWatch) {
+            players.each!((p) {
+                foreach (i; iota(3)) {
+                    p.data.items[i].onWrite((ref Item item) {
+                        if (item == Item.WACKY_WATCH) {
+                            item = [Item.KOOPA_KARD, Item.BARTER_BOX, Item.LUCKY_CHARM].choice(random);
+                        }
+                    });
                 }
             });
         }
