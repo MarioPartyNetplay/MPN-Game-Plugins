@@ -758,7 +758,7 @@ extern (C) {
 
     export void InitiateExecution(ExecutionInfo info) {
         try {
-            random.seed(0);
+            random.seed([unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong]);
             window = info.window;
             addrMask = info.addrMask;
             pc = info.pc;
@@ -796,12 +796,6 @@ extern (C) {
     }
 
     export void Input(int port, InputData* data) {
-        if (*data && *data != input[port]) {
-            // Use the frame, port, and input to flip a random bit in the state of the RNG
-            auto sm64 = SplitMix64((frame << 34) | (cast(ulong)port << 32) | *data);
-            auto pos = uniform(0, 256, sm64);
-            random.state[pos / 64] ^= 1UL << (pos % 64);
-        }
         input[port] = *data;
 
         if (plugin) {
@@ -815,8 +809,6 @@ extern (C) {
             try { plugin.onFrame(frame); }
             catch (Exception e) { error(e); }
         }
-
-        random.popFront();
         
         frame++;
     }
