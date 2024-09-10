@@ -884,13 +884,15 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.increaseItemShopVariety) {
-            int rank = -1;
+            int phase = -1;
+            int rank  = -1;
 
             data.currentTurn.onRead((ref ubyte turn, Address pc) {
                 if (!isBoardScene()) return;
                 if ((pc + 32).val!Instruction != 0x0C03B164) return; // Not item shop
 
-                rank = -1;
+                phase = -1;
+                rank  = -1;
             });
 
             0x800EEA50.onExec({ // Return player rank
@@ -901,22 +903,29 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
                 if ((gpr.ra + 20).val!Instruction != 0x00031880) return; // Not item shop
                 if ((gpr.ra + 24).val!Instruction != 0x00651821) return; // Not item shop
 
-                if (gpr.s1 == GamePhase.EARLY && data.currentTurn >= 6) {
-                    gpr.s1 = GamePhase.MID;
-                }
+                if (phase == -1 && rank == -1) {
+                    phase = gpr.s1;
+                    rank  = gpr.v0;
 
-                if (rank == -1) {
                     if (uniform!"[]"(1, 3, random) == 1) {
-                        switch (gpr.s1) {
-                            case GamePhase.MID: rank = [0, 1]   .remove(min(gpr.v0, 1)).choice(random); break;
-                            case GamePhase.END: rank = [0, 1, 2].remove(min(gpr.v0, 2)).choice(random); break;
-                            default:            rank = gpr.v0;                                          break;
+                        switch (phase) {
+                            case GamePhase.EARLY: phase = GamePhase.MID;                                   break;
+                            case GamePhase.MID:   phase = [GamePhase.EARLY, GamePhase.END].choice(random); break;
+                            case GamePhase.END:   phase = GamePhase.MID;                                   break;
+                            default:                                                                       break;
                         }
-                    } else {
-                        rank = gpr.v0;
+                    }
+
+                    if (uniform!"[]"(1, 3, random) == 1) {
+                        switch (phase) {
+                            case GamePhase.MID: rank = [0, 1]   .remove(min(rank, 1)).choice(random); break;
+                            case GamePhase.END: rank = [0, 1, 2].remove(min(rank, 2)).choice(random); break;
+                            default:                                                                  break;
+                        }
                     }
                 }
 
+                gpr.s1 = phase;
                 gpr.v0 = rank;
             });
         }
