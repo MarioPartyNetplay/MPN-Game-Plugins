@@ -276,7 +276,7 @@ Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen
 
     void dS(Range)(Range r) {
         auto w = min(d+1, r.length);
-        auto cpy = cycle(r[0..w].array);
+        auto cpy = cycle(r.take(w).array);
         auto src = cycle(new bool[w]);
         auto dst = cycle(new bool[w]);
 
@@ -367,7 +367,7 @@ struct ShuffleQueue(T) {
         if (++index < queue.length) return;
 
         if (!queue.empty) {
-            distanceShuffle(queue, (queue.length-1)/2, gen);
+            distanceShuffle(queue, (queue.length - 1) / 2, gen);
         }
 
         index = 0;
@@ -756,16 +756,17 @@ extern (C) {
         }
     }
 
-    export void InitiateExecution(ExecutionInfo info) {
+    export void InitiateExecution(ExecutionInfo ei) {
         try {
+            info("Initializing...");
             random.seed([unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong]);
-            window = info.window;
-            addrMask = info.addrMask;
-            pc = info.pc;
-            jump = info.jump;
-            gpr = info.gpr;
-            fpr = info.fpr;
-            memory = info.memory[0..info.memorySize];
+            window = ei.window;
+            addrMask = ei.addrMask;
+            pc = ei.pc;
+            jump = ei.jump;
+            gpr = ei.gpr;
+            fpr = ei.fpr;
+            memory = ei.memory[0..ei.memorySize];
             frame = 0;
             input.each!((ref b) { b.value = 0; });
             executeHandlers.clear();
@@ -780,8 +781,8 @@ extern (C) {
             handlers!8.write.clear();
 
             if (pluginFactory) {
-                string romName = info.romName.to!string().strip();
-                string romHash = info.romHash.to!string().strip();
+                string romName = ei.romName.to!string().strip();
+                string romHash = ei.romHash.to!string().strip();
 
                 plugin = pluginFactory(romName, romHash);
 

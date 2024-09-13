@@ -447,7 +447,7 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     auto choices = games.filter!(g => !config.blockedMiniGames.canFind(g));
                     auto game = state.miniGameQueue.require(type, ShuffleQueue!MiniGame(choices, random)).next(random);
                     auto altCount = (0x800CBD10 + gpr.s2).val!ubyte - 1;
-                    auto roulette = game ~ games.filter!(g => g != game).array.partialShuffle(altCount, random)[0..altCount];
+                    auto roulette = game ~ games.filter!(g => g != game).array.randomShuffle(random).take(altCount);
                     roulette.randomShuffle(random).each!((i, e) => data.miniGameRoulette[i] = e);
                     0x8004A1FC.onExecOnce({ gpr.v0 = cast(uint)roulette.countUntil(game); });
                     saveState();
@@ -682,8 +682,8 @@ class MarioParty2 : MarioParty!(Config, State, Memory) {
                     bonus = config.bonuses.keys;
                 }
                 if (bonus.length >= 3) {
-                    bonus.partialShuffle(3, random);
-                    info("Bonus Stars: ", bonus[0..3]);
+                    bonus.randomShuffle(random);
+                    info("Bonus Stars: ", bonus.take(3));
                 }
             });
 
