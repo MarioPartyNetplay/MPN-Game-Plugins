@@ -34,6 +34,7 @@ class Config {
     bool unlockEverything = false;
     int revealHiddenBlocksOnRemainingTurns = 0;
     float mapScrollSpeedMultiplier = 1.0;
+    bool increaseItemGameVariety = false;
     bool increaseItemShopVariety = false;
     float toadShopChance = -1.0;
     bool replaceWackyWatch = false;
@@ -117,6 +118,7 @@ union Memory {
     mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
     mixin Field!(0x80109568, BowserEventType, "bowserEventType");
     mixin Field!(0x8010C9E8, Arr!(uint, 4), "mpiqNoJump");
+    mixin Field!(0x8010D40C, Arr!(Item, 5), "itemMiniGameItems");
     mixin Field!(0x8010FE64, Arr!(ubyte, 3), "chanceOrder");
 }
 
@@ -883,6 +885,16 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
             });
         }
 
+        if (config.increaseItemGameVariety) {
+            0x80106C9C.onExec({
+                if (data.currentScene != Scene.MINI_GAME_RULES) return;
+
+                [EnumMembers!Item].filter!(item => item.isCommon).array.randomShuffle(random).take(5).each!((i, item) {
+                    data.itemMiniGameItems[i] = item;
+                });
+            });
+        }
+
         if (config.increaseItemShopVariety) {
             int phase = -1;
             int rank  = -1;
@@ -976,26 +988,26 @@ enum CustomSpace : byte {
 }
 
 enum Item : byte {
-    NONE             = -1,
-    MUSHROOM         =  0,
-    SKELETON_KEY     =  1,
-    POISON_MUSHROOM  =  2,
-    REVERSE_MUSHROOM =  3,
-    CELLULAR_SHOPPER =  4,
-    WARP_BLOCK       =  5,
-    PLUNDER_CHEST    =  6,
-    BOWSER_PHONE     =  7,
-    DUELING_GLOVE    =  8,
-    LUCKY_LAMP       =  9,
-    GOLDEN_MUSHROOM  = 10,
-    BOO_BELL         = 11,
-    BOO_REPELLANT    = 12,
-    BOWSER_SUIT      = 13,
-    MAGIC_LAMP       = 14,
-    KOOPA_KARD       = 15,
-    BARTER_BOX       = 16,
-    LUCKY_CHARM      = 17,
-    WACKY_WATCH      = 18
+    NONE             =   -1,
+    MUSHROOM         = 0x00,
+    SKELETON_KEY     = 0x01,
+    POISON_MUSHROOM  = 0x02,
+    REVERSE_MUSHROOM = 0x03,
+    CELLULAR_SHOPPER = 0x04,
+    WARP_BLOCK       = 0x05,
+    PLUNDER_CHEST    = 0x06,
+    BOWSER_PHONE     = 0x07,
+    DUELING_GLOVE    = 0x08,
+    LUCKY_LAMP       = 0x09,
+    GOLDEN_MUSHROOM  = 0x0A,
+    BOO_BELL         = 0x0B,
+    BOO_REPELLANT    = 0x0C,
+    BOWSER_SUIT      = 0x0D,
+    MAGIC_LAMP       = 0x0E,
+    KOOPA_KARD       = 0x0F,
+    BARTER_BOX       = 0x10,
+    LUCKY_CHARM      = 0x11,
+    WACKY_WATCH      = 0x12
 }
 
 enum Scene : uint {
@@ -1255,6 +1267,18 @@ MiniGameType type(MiniGame game) {
         case 67: .. case 70: return MiniGameType.GAMBLE;
         default:             return MiniGameType.SPECIAL;
     }
+}
+
+bool isValid(Item item) {
+    return Item.MUSHROOM <= item && item <= Item.WACKY_WATCH;
+}
+
+bool isCommon(Item item) {
+    return Item.MUSHROOM <= item && item <= Item.MAGIC_LAMP;
+}
+
+bool isRare(Item item) {
+    return Item.KOOPA_KARD <= item && item <= Item.WACKY_WATCH;
 }
 
 immutable ubyte[] LUCKY_SPACE_TEXTURE = [
