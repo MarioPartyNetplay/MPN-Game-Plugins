@@ -118,7 +118,8 @@ union Memory {
     mixin Field!(0x80108D04, Instruction, "loadBonusStat3b");
     mixin Field!(0x80109568, BowserEventType, "bowserEventType");
     mixin Field!(0x8010C9E8, Arr!(uint, 4), "mpiqNoJump");
-    mixin Field!(0x8010D40C, Arr!(Item, 5), "itemMiniGameItems");
+    mixin Field!(0x800A11D0, Arr!(short, 5), "itemMiniGameItems");
+    mixin Field!(0x8010D40C, Arr!(Item, 5), "itemMiniGameHelpScreenItems");
     mixin Field!(0x8010FE64, Arr!(ubyte, 3), "chanceOrder");
 }
 
@@ -886,12 +887,26 @@ class MarioParty3 : MarioParty!(Config, State, Memory) {
         }
 
         if (config.increaseItemGameVariety) {
-            0x80106C9C.onExec({
+            void populateHelpScreen() {
+                iota(5).map!(i => cast(Item)data.itemMiniGameItems[i])
+                       .array.sort!((a, b) => a.to!string < b.to!string)
+                       .each!((i, item) => data.itemMiniGameHelpScreenItems[3*i%5] = item);
+            }
+
+            0x80106CE8.onExec({
                 if (data.currentScene != Scene.MINI_GAME_RULES) return;
 
-                [EnumMembers!Item].filter!(item => item.isCommon).array.randomShuffle(random).take(5).each!((i, item) {
-                    data.itemMiniGameItems[i] = item;
-                });
+                [EnumMembers!Item].filter!(item => item.isCommon)
+                                  .array.randomShuffle(random).take(5)
+                                  .each!((i, item) => data.itemMiniGameItems[i] = item);
+
+                populateHelpScreen();
+            });
+
+            0x80106E90.onExec({
+                if (data.currentScene != Scene.MINI_GAME_RULES) return;
+
+                populateHelpScreen();
             });
         }
 
