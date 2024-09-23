@@ -276,7 +276,7 @@ Range distanceShuffleFast(Range, RandomGen)(Range r, size_t d, ref RandomGen gen
 
     void dS(Range)(Range r) {
         auto w = min(d+1, r.length);
-        auto cpy = cycle(r[0..w].array);
+        auto cpy = cycle(r.take(w).array);
         auto src = cycle(new bool[w]);
         auto dst = cycle(new bool[w]);
 
@@ -367,7 +367,7 @@ struct ShuffleQueue(T) {
         if (++index < queue.length) return;
 
         if (!queue.empty) {
-            distanceShuffle(queue, (queue.length-1)/2, gen);
+            distanceShuffle(queue, (queue.length - 1) / 2, gen);
         }
 
         index = 0;
@@ -662,14 +662,14 @@ void error(T...)(T args) {
 }
 
 void msg(T...)(MSG_LEVEL level, T args) {
-    if (!debugCallback || !debugContext) return;
+    if (!debugCallback) return;
 
     string message;
     foreach (arg; args) {
         message ~= arg.to!string;
     }
 
-    debugCallback(debugContext, level, message.toStringz);
+    debugCallback(debugContext.toStringz, level, message.toStringz);
 }
 
 struct ExecutionInfo {
@@ -686,7 +686,7 @@ struct ExecutionInfo {
 }
 
 __gshared {
-    immutable(char)* name;
+    const(char)* name;
     Xoshiro256pp random;
     void* window;
     Plugin plugin;
@@ -711,16 +711,16 @@ __gshared {
 
 extern (C) {
     void* coreHandle;
-    void* debugContext;
-    void function(void*, int, immutable(char)*) debugCallback;
+    const(char)[] debugContext;
+    void function(const char*, int, const char*) debugCallback;
 
     string getName();
 
     int startup();
     
-    export int PluginStartup(void* handle, void* context, void function(void*, int, immutable(char)*) callback) {
+    export int PluginStartup(void* handle, const char* context, void function(const char*, int, const char*) callback) {
         coreHandle = handle;
-        debugContext = context;
+        debugContext = context ? fromStringz(context) : "[EXEC]  ";
         debugCallback = callback;
 
         return startup();
@@ -728,7 +728,7 @@ extern (C) {
 
     export int PluginShutdown() { return 0; }
 
-    export int PluginGetVersion(int* pluginType, int* pluginVersion, int* apiVersion, immutable(char)** pluginNamePtr, int* pluginCapabilities) {
+    export int PluginGetVersion(int* pluginType, int* pluginVersion, int* apiVersion, const(char)** pluginNamePtr, int* pluginCapabilities) {
         if (pluginType) *pluginType = 5;
         if (pluginVersion) *pluginVersion = 0x020000;
         if (apiVersion) *apiVersion = 0x020000;
@@ -756,16 +756,17 @@ extern (C) {
         }
     }
 
-    export void InitiateExecution(ExecutionInfo info) {
+    export void InitiateExecution(ExecutionInfo ei) {
         try {
-            random.seed(0);
-            window = info.window;
-            addrMask = info.addrMask;
-            pc = info.pc;
-            jump = info.jump;
-            gpr = info.gpr;
-            fpr = info.fpr;
-            memory = info.memory[0..info.memorySize];
+            info("Initializing...");
+            random.seed([unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong, unpredictableSeed!ulong]);
+            window = ei.window;
+            addrMask = ei.addrMask;
+            pc = ei.pc;
+            jump = ei.jump;
+            gpr = ei.gpr;
+            fpr = ei.fpr;
+            memory = ei.memory[0..ei.memorySize];
             frame = 0;
             input.each!((ref b) { b.value = 0; });
             executeHandlers.clear();
@@ -780,8 +781,8 @@ extern (C) {
             handlers!8.write.clear();
 
             if (pluginFactory) {
-                string romName = info.romName.to!string().strip();
-                string romHash = info.romHash.to!string().strip();
+                string romName = ei.romName.to!string().strip();
+                string romHash = ei.romHash.to!string().strip();
 
                 plugin = pluginFactory(romName, romHash);
 
@@ -796,12 +797,6 @@ extern (C) {
     }
 
     export void Input(int port, InputData* data) {
-        if (*data && *data != input[port]) {
-            // Use the frame, port, and input to flip a random bit in the state of the RNG
-            auto sm64 = SplitMix64((frame << 34) | (cast(ulong)port << 32) | *data);
-            auto pos = uniform(0, 256, sm64);
-            random.state[pos / 64] ^= 1UL << (pos % 64);
-        }
         input[port] = *data;
 
         if (plugin) {
@@ -815,8 +810,6 @@ extern (C) {
             try { plugin.onFrame(frame); }
             catch (Exception e) { error(e); }
         }
-
-        random.popFront();
         
         frame++;
     }

@@ -55,6 +55,18 @@ string formatText(string text) pure {
                .replace("<END>",    "\xFF");
 }
 
+string unformatText(string text) pure {
+    return text.replace("\x3D", "-")
+               .replace("\x3E", "×")
+               .replace("\x5C", "'")
+               .replace("\x5F", "/")
+               .replace("\x7B", ":")
+               .replace("\x82", ",")
+               .replace("\x85", ".")
+               .replace("\xC2", "!")
+               .replace("\xC3", "?");
+}
+
 class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateType) {
     alias typeof(MemoryType.currentScene) Scene;
     alias typeof(MemoryType.players.front) PlayerData;
@@ -165,10 +177,9 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
                         if (!isScoreScene()) return;
                         if (lockTeams()) {
                             coins = p.data.coins;
-                        } if (!disableTeams()) {
+                        } else if (!disableTeams()) {
                             teammates(p).each!((t) {
                                 t.data.coins = coins;
-                                t.data.maxCoins = max(t.data.maxCoins, coins);
                             });
                         }
                     });
@@ -176,9 +187,19 @@ class MarioParty(ConfigType, StateType, MemoryType) : Game!(ConfigType, StateTyp
                         if (!isScoreScene()) return;
                         if (lockTeams()) {
                             stars = p.data.stars;
-                        } if (!disableTeams()) {
+                        } else if (!disableTeams()) {
                             teammates(p).each!((t) {
                                 t.data.stars = stars;
+                            });
+                        }
+                    });
+                    p.data.maxCoins.onWrite((ref ushort maxCoins) {
+                        if (!isScoreScene()) return;
+                        if (lockTeams()) {
+                            maxCoins = p.data.maxCoins;
+                        } else {
+                            teammates(p).each!((t) {
+                                t.data.maxCoins = maxCoins;
                             });
                         }
                     });
